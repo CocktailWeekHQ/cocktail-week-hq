@@ -323,6 +323,44 @@ export default function Dashboard() {
     };
   }, [today]);
 
+  // Instant View
+  const [instantPeriod, setInstantPeriod] = useState("yesterday");
+  const CITY_COLORS = {"Belfast":"#6366f1","Cardiff":"#ec4899","Coventry":"#f59e0b","Dundee":"#00d4aa","Dunfermline":"#3b82f6","Inverness":"#22c55e","Leeds":"#a78bfa","Liverpool":"#ef4444","Manchester":"#f97316","Newcastle":"#06b6d4","Nottingham":"#84cc16","Perth":"#e11d48","Reading":"#8b5cf6","Sheffield":"#14b8a6","St Andrews":"#fbbf24","Stirling":"#60a5fa","Sunderland":"#fb923c","York":"#34d399"};
+  const instantViewData = useMemo(() => {
+    const ps = periodSales;
+    const getRows = p => p==="yesterday"?ps.yesterday.byEvt:p==="7day"?ps.last7.byEvt:ps.mtd.byEvt;
+    const getPrev = p => p==="yesterday"?ps.dayBefore:p==="7day"?ps.prior7:ps.lastMth;
+    const currRows = getRows(instantPeriod);
+    const prev = getPrev(instantPeriod);
+    // Aggregate by city
+    const cityMap = {};
+    currRows.forEach(r => {
+      if (!cityMap[r.city]) cityMap[r.city] = {city:r.city, tickets:0, revenue:0};
+      cityMap[r.city].tickets += r.tickets; cityMap[r.city].revenue += r.revenue;
+    });
+    // Prior period by city from DATA
+    const pStart = instantPeriod==="yesterday"?addDays(periodSales.yesterday.date,-1):
+                   instantPeriod==="7day"?addDays(today,-14):
+                   (()=>{const m=today.slice(0,7)+"-01";return addDays(m,-1).slice(0,7)+"-01";})();
+    const pEnd = instantPeriod==="yesterday"?addDays(today,-2):
+                 instantPeriod==="7day"?addDays(today,-8):
+                 addDays(today.slice(0,7)+"-01",-1);
+    const prevMap = {};
+    DATA.filter(d=>d.date>=pStart&&d.date<=pEnd).forEach(d=>{
+      if(!prevMap[d.city]) prevMap[d.city]={tickets:0,revenue:0};
+      prevMap[d.city].tickets+=d.tickets; prevMap[d.city].revenue+=d.revenue;
+    });
+    return Object.values(cityMap).map(c => {
+      const p = prevMap[c.city]||{tickets:0,revenue:0};
+      const avg = c.tickets>0?c.revenue/c.tickets:0;
+      const tDiff = p.tickets>0?Math.round((c.tickets-p.tickets)/p.tickets*100):null;
+      const rDiff = p.revenue>0?Math.round((c.revenue-p.revenue)/p.revenue*100):null;
+      return {...c, revenue:Math.round(c.revenue*100)/100, avg:Math.round(avg*100)/100,
+        prevTickets:p.tickets, prevRevenue:Math.round(p.revenue*100)/100,
+        tDiff, rDiff, color:CITY_COLORS[c.city]||"#7a8499"};
+    }).sort((a,b)=>b.revenue-a.revenue);
+  }, [instantPeriod, periodSales, today]);
+
   // Ticker modal state
   const [tickerModal, setTickerModal] = useState(null); // "yesterday"|"7day"|"mtd"
   // Stats table sort
@@ -416,6 +454,7 @@ export default function Dashboard() {
 
   const tabs = [
     {id:"overview",label:"Overview",icon:"📊"},
+    {id:"instant",label:"Instant View",icon:"⚡"},
     {id:"events",label:"By Event",icon:"🎉"},
     {id:"cities",label:"By City",icon:"🏙️"},
     {id:"daily",label:"Daily",icon:"📅"},
@@ -428,17 +467,41 @@ export default function Dashboard() {
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px"}}>
 
+      {/* GLOBAL FILTER BAR — shown on all tabs except Event Stats */}
+      {tab!=="stats" && (
+        <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginRight:4}}>Filters</span>
+          {[
+            {label:"City",val:city,set:v=>{setCity(v);setEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
+            {label:"Year",val:year,set:setYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
+            {label:"Month",val:month,set:setMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
+            {label:"Event",val:event,set:setEvent,opts:[["All","All Events"],...cityEvents.map(e=>[e,e])]},
+          ].map(f=>(
+            <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
+              <select value={f.val} onChange={e=>f.set(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
+                {f.opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          ))}
+          {(city!=="All"||year!=="All"||month!=="All"||event!=="All")&&(
+            <button onClick={()=>{setCity("All");setYear("All");setMonth("All");setEvent("All");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+          )}
+        </div>
+      )}
+
       {/* TICKER */}
       {(()=>{
         const ps=periodSales;
         const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
+        const avgP=(t,r)=>t>0?(r/t).toFixed(2):null;
         const items=[
-          {label:"Yesterday Tickets",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.dayBefore.tickets),rev:cur(ps.yesterday.revenue),period:"yesterday"},
-          {label:"7-Day Tickets",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.prior7.tickets),rev:cur(ps.last7.revenue),period:"7day"},
-          {label:"MTD Tickets",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lastMth.tickets),rev:cur(ps.mtd.revenue),period:"mtd"},
-          {label:"vs LY Yesterday",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.lyYesterday.tickets),rev:cur(ps.yesterday.revenue),period:"yesterday"},
-          {label:"vs LY 7-Day",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.lyLast7.tickets),rev:cur(ps.last7.revenue),period:"7day"},
-          {label:"vs LY MTD",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lyMtd.tickets),rev:cur(ps.mtd.revenue),period:"mtd"},
+          {label:"Yesterday Tickets",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.dayBefore.tickets),rev:cur(ps.yesterday.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),period:"yesterday"},
+          {label:"7-Day Tickets",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.prior7.tickets),rev:cur(ps.last7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),period:"7day"},
+          {label:"MTD Tickets",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lastMth.tickets),rev:cur(ps.mtd.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),period:"mtd"},
+          {label:"vs LY Yesterday",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.lyYesterday.tickets),rev:cur(ps.yesterday.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),period:"yesterday"},
+          {label:"vs LY 7-Day",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.lyLast7.tickets),rev:cur(ps.last7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),period:"7day"},
+          {label:"vs LY MTD",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lyMtd.tickets),rev:cur(ps.mtd.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),period:"mtd"},
         ];
         return (
           <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,marginBottom:16,overflow:"hidden"}}>
@@ -454,7 +517,8 @@ export default function Dashboard() {
                         <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{item.label}</span>
                         <span style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{item.val}</span>
                         <span style={{fontSize:11,color:"#7a8499"}}>{item.rev}</span>
-                        {item.diff!==null&&<span style={{fontSize:11,fontWeight:700,color:up?"#22c55e":"#ef4444"}}>{up?"\u25b2":"\u25bc"}{Math.abs(+item.diff)}%</span>}
+                        {item.avg&&<span style={{fontSize:11,color:"#f59e0b"}}>~{cur(+item.avg)}</span>}
+                        {item.diff!==null&&<span style={{fontSize:11,fontWeight:700,color:up?"#22c55e":"#ef4444"}}>{up?"▲":"▼"}{Math.abs(+item.diff)}%</span>}
                       </button>
                     );
                   })}
@@ -529,14 +593,20 @@ export default function Dashboard() {
             const card=(label,curr,prev,lyVal,period,unit)=>{
               const diff=prev.tickets>0?Math.round((curr.tickets-prev.tickets)/prev.tickets*100):null;
               const lyDiff=lyVal.tickets>0?Math.round((curr.tickets-lyVal.tickets)/lyVal.tickets*100):null;
-              const up=diff===null||diff>=0; const lyUp=lyDiff===null||lyDiff>=0;
+              const rDiff=prev.revenue>0?Math.round((curr.revenue-prev.revenue)/prev.revenue*100):null;
+              const up=diff===null||diff>=0; const lyUp=lyDiff===null||lyDiff>=0; const rUp=rDiff===null||rDiff>=0;
+              const avgP=curr.tickets>0?curr.revenue/curr.tickets:0;
               return (
                 <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,cursor:"pointer"}} onClick={()=>setTickerModal(period)}>
                   <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontWeight:600}}>{label}</div>
-                  <div style={{fontSize:22,fontWeight:700,color:"#e4e8f0",fontFamily:"'Sora',sans-serif",lineHeight:1}}>{fmt(curr.tickets)}</div>
-                  <div style={{fontSize:13,color:"#22c55e",marginTop:4,fontWeight:600}}>{cur(curr.revenue)}</div>
-                  <div style={{display:"flex",gap:12,marginTop:10,flexWrap:"wrap"}}>
-                    {diff!==null&&<div style={{fontSize:11,color:up?"#22c55e":"#ef4444",fontWeight:600}}>{up?"\u25b2":"\u25bc"}{Math.abs(diff)}% vs prev {unit} ({prev.tickets>0?"+":""}{curr.tickets-prev.tickets} tkts)</div>}
+                  <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                    <div style={{fontSize:22,fontWeight:700,color:"#e4e8f0",fontFamily:"'Sora',sans-serif",lineHeight:1}}>{fmt(curr.tickets)}</div>
+                    <div style={{fontSize:13,color:"#22c55e",fontWeight:600}}>{cur(curr.revenue)}</div>
+                    {avgP>0&&<div style={{fontSize:11,color:"#f59e0b"}}>~{cur(avgP)} avg</div>}
+                  </div>
+                  <div style={{display:"flex",gap:10,marginTop:10,flexWrap:"wrap"}}>
+                    {diff!==null&&<div style={{fontSize:11,color:up?"#22c55e":"#ef4444",fontWeight:600}}>{up?"\u25b2":"\u25bc"}{Math.abs(diff)}% tkts vs prev {unit}</div>}
+                    {rDiff!==null&&<div style={{fontSize:11,color:rUp?"#22c55e":"#ef4444"}}>{rUp?"\u25b2":"\u25bc"}{Math.abs(rDiff)}% rev</div>}
                     {lyDiff!==null&&<div style={{fontSize:11,color:lyUp?"#22c55e":"#ef4444"}}>LY: {lyUp?"\u25b2":"\u25bc"}{Math.abs(lyDiff)}%</div>}
                   </div>
                 </div>
@@ -719,6 +789,69 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+
+      {/* INSTANT VIEW */}
+      {tab==="instant" && (
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+            <div style={{fontSize:14,fontWeight:700}}>⚡ Instant View — Revenue by City</div>
+            <div style={{display:"flex",gap:6}}>
+              {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {instantViewData.length===0?(
+            <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"40px 20px",textAlign:"center",color:"#4d5568"}}>No sales data for this period.</div>
+          ):(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
+              {instantViewData.map((c,i)=>{
+                const ahead=c.tDiff===null||c.tDiff>=0;
+                const rAhead=c.rDiff===null||c.rDiff>=0;
+                return (
+                  <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,borderTop:"3px solid "+c.color,position:"relative"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
+                      <div style={{width:10,height:10,borderRadius:"50%",background:c.color,marginTop:4}}/>
+                    </div>
+                    <div style={{fontSize:26,fontWeight:700,color:c.color,fontFamily:"'Sora',sans-serif",lineHeight:1,marginBottom:4}}>{cur(c.revenue)}</div>
+                    <div style={{fontSize:13,color:"#e4e8f0",marginBottom:2}}>{c.tickets.toLocaleString()} tickets</div>
+                    {c.avg>0&&<div style={{fontSize:12,color:"#f59e0b",marginBottom:10}}>~{cur(c.avg)} avg price</div>}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {c.tDiff!==null&&(
+                        <span style={{fontSize:11,fontWeight:700,color:ahead?"#22c55e":"#ef4444",background:ahead?"#22c55e11":"#ef444411",padding:"2px 8px",borderRadius:6}}>
+                          {ahead?"▲":"▼"}{Math.abs(c.tDiff)}% tkts
+                        </span>
+                      )}
+                      {c.rDiff!==null&&(
+                        <span style={{fontSize:11,fontWeight:700,color:rAhead?"#22c55e":"#ef4444",background:rAhead?"#22c55e11":"#ef444411",padding:"2px 8px",borderRadius:6}}>
+                          {rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% rev
+                        </span>
+                      )}
+                    </div>
+                    {c.prevTickets>0&&<div style={{fontSize:10,color:"#4d5568",marginTop:8}}>Prev: {c.prevTickets.toLocaleString()} tkts · {cur(c.prevRevenue)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Summary totals */}
+          {instantViewData.length>0&&(()=>{
+            const totT=instantViewData.reduce((s,c)=>s+c.tickets,0);
+            const totR=instantViewData.reduce((s,c)=>s+c.revenue,0);
+            const totAvg=totT>0?totR/totT:0;
+            return (
+              <div style={{marginTop:20,background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,display:"flex",gap:24,flexWrap:"wrap"}}>
+                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Tickets</div><div style={{fontSize:18,fontWeight:700,color:"#00d4aa"}}>{totT.toLocaleString()}</div></div>
+                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Revenue</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{cur(totR)}</div></div>
+                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Avg Ticket Price</div><div style={{fontSize:18,fontWeight:700,color:"#f59e0b"}}>{cur(totAvg)}</div></div>
+                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Active Cities</div><div style={{fontSize:18,fontWeight:700,color:"#6366f1"}}>{instantViewData.length}</div></div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
