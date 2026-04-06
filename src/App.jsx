@@ -325,6 +325,7 @@ export default function Dashboard() {
 
   // Instant View
   const [instantPeriod, setInstantPeriod] = useState("yesterday");
+  const [dailyMode, setDailyMode] = useState("total"); // "total" | "byevent"
   const CITY_COLORS = {"Belfast":"#6366f1","Cardiff":"#ec4899","Coventry":"#f59e0b","Dundee":"#00d4aa","Dunfermline":"#3b82f6","Inverness":"#22c55e","Leeds":"#a78bfa","Liverpool":"#ef4444","Manchester":"#f97316","Newcastle":"#06b6d4","Nottingham":"#84cc16","Perth":"#e11d48","Reading":"#8b5cf6","Sheffield":"#14b8a6","St Andrews":"#fbbf24","Stirling":"#60a5fa","Sunderland":"#fb923c","York":"#34d399"};
   const instantViewData = useMemo(() => {
     const ps = periodSales;
@@ -459,7 +460,6 @@ export default function Dashboard() {
     {id:"daily",label:"Daily",icon:"📅"},
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
     {id:"stats",label:"Event Stats",icon:"📋"},
-    {id:"filters",label:"Filters",icon:"🔍"},
     {id:"add",label:"Add Event",icon:"➕"},
     {id:"overview",label:"Overview",icon:"📊"},
   ];
@@ -790,62 +790,111 @@ export default function Dashboard() {
       {tab==="instant" && (
         <div>
 
-          {/* PERIOD BLOCKS */}
+          {/* PERIOD SUMMARY BLOCKS */}
           {(()=>{
             const ps=periodSales;
             const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
-            const block=(label,curr,prev,lyVal,period)=>{
-              const tDiff=pct(curr.tickets,prev.tickets); const rDiff=pct(curr.revenue,prev.revenue);
-              const lyTDiff=pct(curr.tickets,lyVal.tickets); const lyRDiff=pct(curr.revenue,lyVal.revenue);
-              const tUp=tDiff===null||+tDiff>=0; const rUp=rDiff===null||+rDiff>=0;
-              const lyTUp=lyTDiff===null||+lyTDiff>=0; const lyRUp=lyRDiff===null||+lyRDiff>=0;
-              const avg=curr.tickets>0?curr.revenue/curr.tickets:0;
-              const prevAvg=prev.tickets>0?prev.revenue/prev.tickets:0;
-              const avgDiff=pct(avg,prevAvg);
-              const avgUp=avgDiff===null||+avgDiff>=0;
-              return (
-                <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:20,cursor:"pointer",flex:1,minWidth:260}} onClick={()=>setTickerModal(period)}>
-                  <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>{label}</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-                    <div>
-                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Tickets</div>
-                      <div style={{fontSize:20,fontWeight:700,color:"#e4e8f0",fontFamily:"'Sora',sans-serif"}}>{curr.tickets.toLocaleString()}</div>
-                      {tDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:tUp?"#22c55e":"#ef4444",marginTop:2}}>{tUp?"▲":"▼"}{Math.abs(+tDiff)}% vs prev</div>}
-                    </div>
-                    <div>
-                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Revenue</div>
-                      <div style={{fontSize:20,fontWeight:700,color:"#22c55e",fontFamily:"'Sora',sans-serif"}}>{cur(curr.revenue)}</div>
-                      {rDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:rUp?"#22c55e":"#ef4444",marginTop:2}}>{rUp?"▲":"▼"}{Math.abs(+rDiff)}% vs prev</div>}
-                    </div>
-                    <div>
-                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Avg Price</div>
-                      <div style={{fontSize:20,fontWeight:700,color:"#f59e0b",fontFamily:"'Sora',sans-serif"}}>{avg>0?cur(avg):"—"}</div>
-                      {avgDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:avgUp?"#22c55e":"#ef4444",marginTop:2}}>{avgUp?"▲":"▼"}{Math.abs(+avgDiff)}% vs prev</div>}
-                    </div>
-                  </div>
-                  <div style={{borderTop:"1px solid #242a35",paddingTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <div>
-                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>vs Last Year Tickets</div>
-                      <div style={{fontSize:12,color:"#e4e8f0",fontWeight:600}}>{lyVal.tickets>0?lyVal.tickets.toLocaleString():"No LY data"}</div>
-                      {lyTDiff!==null&&lyVal.tickets>0&&<div style={{fontSize:11,fontWeight:700,color:lyTUp?"#22c55e":"#ef4444"}}>{lyTUp?"▲":"▼"}{Math.abs(+lyTDiff)}%</div>}
-                    </div>
-                    <div>
-                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>vs Last Year Revenue</div>
-                      <div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{lyVal.revenue>0?cur(lyVal.revenue):"No LY data"}</div>
-                      {lyRDiff!==null&&lyVal.revenue>0&&<div style={{fontSize:11,fontWeight:700,color:lyRUp?"#22c55e":"#ef4444"}}>{lyRUp?"▲":"▼"}{Math.abs(+lyRDiff)}%</div>}
-                    </div>
-                  </div>
-                </div>
-              );
-            };
+            const diffs=(curr,prev,lyVal)=>({
+              tDiff:pct(curr.tickets,prev.tickets), rDiff:pct(curr.revenue,prev.revenue),
+              lyTDiff:pct(curr.tickets,lyVal.tickets), lyRDiff:pct(curr.revenue,lyVal.revenue),
+              avg:curr.tickets>0?curr.revenue/curr.tickets:0,
+              prevAvg:prev.tickets>0?prev.revenue/prev.tickets:0,
+            });
+            const periods=[
+              {label:"Yesterday",curr:ps.yesterday,prev:ps.dayBefore,ly:ps.lyYesterday,id:"yesterday"},
+              {label:"Last 7 Days",curr:ps.last7,prev:ps.prior7,ly:ps.lyLast7,id:"7day"},
+              {label:"Month to Date",curr:ps.mtd,prev:ps.lastMth,ly:ps.lyMtd,id:"mtd"},
+            ];
             return (
-              <div style={{display:"flex",gap:12,marginBottom:22,flexWrap:"wrap"}}>
-                {block("Yesterday",ps.yesterday,ps.dayBefore,ps.lyYesterday,"yesterday")}
-                {block("Last 7 Days",ps.last7,ps.prior7,ps.lyLast7,"7day")}
-                {block("Month to Date",ps.mtd,ps.lastMth,ps.lyMtd,"mtd")}
+              <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+                {periods.map(p=>{
+                  const d=diffs(p.curr,p.prev,p.ly);
+                  const avgDiff=pct(d.avg,d.prevAvg);
+                  return (
+                    <div key={p.id} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,flex:1,minWidth:240,cursor:"pointer"}} onClick={()=>setTickerModal(p.id)}>
+                      <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>{p.label}</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Tickets</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#e4e8f0"}}>{p.curr.tickets.toLocaleString()}</div>
+                          {d.tDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+d.tDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+d.tDiff>=0?"▲":"▼"}{Math.abs(+d.tDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+d.tDiff>=0?"+":""}{(p.curr.tickets-p.prev.tickets).toLocaleString()})</span></div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Revenue</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{cur(p.curr.revenue)}</div>
+                          {d.rDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+d.rDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+d.rDiff>=0?"▲":"▼"}{Math.abs(+d.rDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+d.rDiff>=0?"+":""}{cur(Math.round((p.curr.revenue-p.prev.revenue)*100)/100)})</span></div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Avg Price</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#f59e0b"}}>{d.avg>0?cur(d.avg):"—"}</div>
+                          {avgDiff!==null&&d.prevAvg>0&&<div style={{fontSize:11,fontWeight:700,color:+avgDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+avgDiff>=0?"▲":"▼"}{Math.abs(+avgDiff)}%</div>}
+                        </div>
+                      </div>
+                      {(p.ly.tickets>0||p.ly.revenue>0)&&(
+                        <div style={{borderTop:"1px solid #1e222b",paddingTop:8,display:"flex",gap:14,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Tickets</div>
+                            <div style={{fontSize:12,color:d.lyTDiff!==null&&+d.lyTDiff>=0?"#22c55e":"#ef4444",fontWeight:600}}>
+                              {p.ly.tickets.toLocaleString()} {d.lyTDiff!==null&&<span>({+d.lyTDiff>=0?"▲":"▼"}{Math.abs(+d.lyTDiff)}%)</span>}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Revenue</div>
+                            <div style={{fontSize:12,color:d.lyRDiff!==null&&+d.lyRDiff>=0?"#22c55e":"#ef4444",fontWeight:600}}>
+                              {cur(p.ly.revenue)} {d.lyRDiff!==null&&<span>({+d.lyRDiff>=0?"▲":"▼"}{Math.abs(+d.lyRDiff)}%)</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
+
+          {/* PERIOD BREAKDOWN BY CITY — toggleable */}
+          <div style={{marginBottom:22}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:13,fontWeight:700}}>📍 Breakdown by City</div>
+              <div style={{display:"flex",gap:6}}>
+                {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"5px 12px",borderRadius:7,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+                ))}
+              </div>
+            </div>
+            {instantViewData.length===0?(
+              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"20px",textAlign:"center",color:"#4d5568",fontSize:13}}>No city sales for this period.</div>
+            ):(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+                {instantViewData.map(c=>{
+                  const ahead=c.tDiff===null||c.tDiff>=0;
+                  const rAhead=c.rDiff===null||c.rDiff>=0;
+                  return (
+                    <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:14,borderLeft:"3px solid "+c.color}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Tickets</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.tickets.toLocaleString()}</div>
+                          {c.tDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:ahead?"#22c55e":"#ef4444"}}>{ahead?"▲":"▼"}{Math.abs(c.tDiff)}% ({ahead?"+":""}{(c.tickets-c.prevTickets).toLocaleString()})</div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Revenue</div>
+                          <div style={{fontSize:15,fontWeight:700,color:c.color}}>{cur(c.revenue)}</div>
+                          {c.rDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:rAhead?"#22c55e":"#ef4444"}}>{rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% ({rAhead?"+":""}{cur(Math.round((c.revenue-c.prevRevenue)*100)/100)})</div>}
+                        </div>
+                      </div>
+                      {c.avg>0&&<div style={{fontSize:10,color:"#f59e0b"}}>Avg: ~{cur(c.avg)}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           {/* LIVE PACING VS PREVIOUS EVENT */}
           {cityPacingComparison.length>0 && (
@@ -938,44 +987,26 @@ export default function Dashboard() {
           </div>
 
           {/* TOP 10 SALES DATES BY REVENUE */}
-          {(()=>{
-            const top10 = [...DATA].sort((a,b)=>b.revenue-a.revenue).slice(0,10);
-            return (
-              <div>
-                <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🏆 Top 10 Sales Dates by Revenue</div>
-                <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
-                    <thead><tr style={{background:"#1a1e26"}}>
-                      {["#","Date","Event","City","Revenue"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}
-                    </tr></thead>
-                    <tbody>{top10.map((r,i)=>(
-                      <tr key={i} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
-                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#4d5568",fontWeight:700}}>{i+1}</td>
-                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.date}</td>
-                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.event}</td>
-                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.city}</td>
-                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{cur(r.revenue)}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
-
         </div>
       )}
 
       {/* BY EVENT */}
       {tab==="events" && (
-        <Table columns={[
-          {key:"event",label:"Event"},{key:"city",label:"City"},
-          {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
-          {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
-          {key:"tickets",label:"Tickets",fmt:v=>fmt(v)},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-          {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},{key:"avgDaily",label:"Tickets/Day"},
-          {key:"avgDailyRev",label:"Rev/Day",fmt:v=>cur(v)},{key:"days",label:"Selling Days"},
-        ]} data={eventSummary} maxRows={100}/>
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:18}}>
+            {[...eventSummary].sort((a,b)=>b.revenue-a.revenue).slice(0,8).map((e,i)=>(
+              <KPI key={e.event} label={e.event.replace(/ Cocktail Week /,' CW ')} value={cur(e.revenue)} color={COLORS[i%COLORS.length]} sub={fmt(e.tickets)+" tickets · "+e.city}/>
+            ))}
+          </div>
+          <Table columns={[
+            {key:"event",label:"Event"},{key:"city",label:"City"},
+            {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
+            {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
+            {key:"tickets",label:"Tickets",fmt:v=>fmt(v)},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+            {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},{key:"avgDaily",label:"Tickets/Day"},
+            {key:"avgDailyRev",label:"Rev/Day",fmt:v=>cur(v)},{key:"days",label:"Selling Days"},
+          ]} data={eventSummary} maxRows={100}/>
+        </div>
       )}
 
       {/* BY CITY */}
@@ -997,12 +1028,36 @@ export default function Dashboard() {
       {/* DAILY */}
       {tab==="daily" && (
         <div>
-          <div style={{fontSize:12,color:"#7a8499",marginBottom:14}}>{fmt(filtered.length)} daily records.</div>
-          <Table columns={[
-            {key:"date",label:"Date"},{key:"event",label:"Event"},{key:"city",label:"City"},
-            {key:"tickets",label:"Tickets"},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-            {key:"avgPrice",label:"Avg Price",fmt:(v,row)=>row.tickets>0?cur(row.revenue/row.tickets):"-"},
-          ]} data={filtered.slice().sort((a,b)=>b.date.localeCompare(a.date))} maxRows={300}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:12,color:"#7a8499"}}>{fmt(filtered.length)} daily records</div>
+            <div style={{display:"flex",gap:6}}>
+              {[["total","Total by Day"],["byevent","By Event"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setDailyMode(v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyMode===v?"#00d4aa":"#242a35"),background:dailyMode===v?"#00d4aa22":"transparent",color:dailyMode===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:dailyMode===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+              ))}
+            </div>
+          </div>
+          {dailyMode==="byevent" ? (
+            <Table columns={[
+              {key:"date",label:"Date"},{key:"event",label:"Event"},{key:"city",label:"City"},
+              {key:"tickets",label:"Tickets"},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+              {key:"avgPrice",label:"Avg Price",fmt:(v,row)=>row.tickets>0?cur(row.revenue/row.tickets):"-"},
+            ]} data={filtered.slice().sort((a,b)=>b.date.localeCompare(a.date))} maxRows={300}/>
+          ) : (
+            <Table columns={[
+              {key:"date",label:"Date"},
+              {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
+              {key:"revenue",label:"Total Revenue",fmt:v=>cur(v)},
+              {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},
+              {key:"events",label:"Events"},
+            ]} data={(()=>{
+              const map={};
+              filtered.forEach(d=>{
+                if(!map[d.date]) map[d.date]={date:d.date,tickets:0,revenue:0,evtSet:new Set()};
+                map[d.date].tickets+=d.tickets; map[d.date].revenue+=d.revenue; map[d.date].evtSet.add(d.event);
+              });
+              return Object.values(map).map(d=>({...d,revenue:Math.round(d.revenue*100)/100,avgPrice:d.tickets>0?Math.round(d.revenue/d.tickets*100)/100:0,events:d.evtSet.size})).sort((a,b)=>b.date.localeCompare(a.date));
+            })()} maxRows={300}/>
+          )}
         </div>
       )}
 
@@ -1213,37 +1268,6 @@ export default function Dashboard() {
 
 
       {/* FILTERS */}
-      {tab==="filters" && (
-        <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:20}}>
-          <div style={{fontSize:14,fontWeight:600,marginBottom:16}}>{"\ud83d\udd0d"} Data Filters</div>
-          <p style={{fontSize:12,color:"#7a8499",marginBottom:20}}>Filters apply across By Event, By City, and Daily tabs. Overview and Tracker use all data.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:16}}>
-            <div><label style={LS}>City</label>
-              <select value={city} onChange={e=>{setCity(e.target.value);setEvent("All")}} style={{...IS,cursor:"pointer"}}>
-                <option value="All">All Cities</option>{CITIES_LIST.map(cv=><option key={cv}>{cv}</option>)}
-              </select></div>
-            <div><label style={LS}>Year</label>
-              <select value={year} onChange={e=>setYear(e.target.value)} style={{...IS,cursor:"pointer"}}>
-                <option value="All">All</option>{ALL_YEARS.map(y=><option key={y}>{y}</option>)}
-              </select></div>
-            <div><label style={LS}>Month</label>
-              <select value={month} onChange={e=>setMonth(e.target.value)} style={{...IS,cursor:"pointer"}}>
-                <option value="All">All</option>{ALL_MONTHS_NUM.map(m=><option key={m} value={m}>{MONTHS[m]}</option>)}
-              </select></div>
-            <div><label style={LS}>Event</label>
-              <select value={event} onChange={e=>setEvent(e.target.value)} style={{...IS,cursor:"pointer"}}>
-                <option value="All">All Events</option>{cityEvents.map(ev=><option key={ev}>{ev}</option>)}
-              </select></div>
-          </div>
-          {(city!=="All"||year!=="All"||month!=="All"||event!=="All")&&(
-            <button onClick={()=>{setCity("All");setYear("All");setMonth("All");setEvent("All");}} style={{marginTop:20,padding:"8px 18px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:8,color:"#ef4444",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>
-              Clear All Filters
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ADD EVENT */}
       {tab==="add" && (
         <div>
           <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:20,marginBottom:20}}>
