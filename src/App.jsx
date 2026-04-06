@@ -144,7 +144,7 @@ export default function Dashboard() {
   const [event, setEvent] = useState("All");
   const [year, setYear] = useState("All");
   const [month, setMonth] = useState("All");
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("instant");
   const [startDates, setStartDates] = useState(EVENT_START_DATES);
   const [compareEvents, setCompareEvents] = useState([]);
   const [searchEvt, setSearchEvt] = useState("");
@@ -453,7 +453,6 @@ export default function Dashboard() {
   const LS = {display:"block",fontSize:10,fontWeight:600,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4};
 
   const tabs = [
-    {id:"overview",label:"Overview",icon:"📊"},
     {id:"instant",label:"Instant View",icon:"⚡"},
     {id:"events",label:"By Event",icon:"🎉"},
     {id:"cities",label:"By City",icon:"🏙️"},
@@ -462,6 +461,7 @@ export default function Dashboard() {
     {id:"stats",label:"Event Stats",icon:"📋"},
     {id:"filters",label:"Filters",icon:"🔍"},
     {id:"add",label:"Add Event",icon:"➕"},
+    {id:"overview",label:"Overview",icon:"📊"},
   ];
 
   return (
@@ -496,12 +496,9 @@ export default function Dashboard() {
         const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
         const avgP=(t,r)=>t>0?(r/t).toFixed(2):null;
         const items=[
-          {label:"Yesterday Tickets",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.dayBefore.tickets),rev:cur(ps.yesterday.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),period:"yesterday"},
-          {label:"7-Day Tickets",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.prior7.tickets),rev:cur(ps.last7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),period:"7day"},
-          {label:"MTD Tickets",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lastMth.tickets),rev:cur(ps.mtd.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),period:"mtd"},
-          {label:"vs LY Yesterday",val:fmt(ps.yesterday.tickets),diff:pct(ps.yesterday.tickets,ps.lyYesterday.tickets),rev:cur(ps.yesterday.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),period:"yesterday"},
-          {label:"vs LY 7-Day",val:fmt(ps.last7.tickets),diff:pct(ps.last7.tickets,ps.lyLast7.tickets),rev:cur(ps.last7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),period:"7day"},
-          {label:"vs LY MTD",val:fmt(ps.mtd.tickets),diff:pct(ps.mtd.tickets,ps.lyMtd.tickets),rev:cur(ps.mtd.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),period:"mtd"},
+          {label:"Yesterday",tickets:ps.yesterday.tickets,tDiff:pct(ps.yesterday.tickets,ps.dayBefore.tickets),revenue:ps.yesterday.revenue,rDiff:pct(ps.yesterday.revenue,ps.dayBefore.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),avgDiff:pct(avgP(ps.yesterday.tickets,ps.yesterday.revenue),avgP(ps.dayBefore.tickets,ps.dayBefore.revenue)),period:"yesterday"},
+          {label:"Last 7 Days",tickets:ps.last7.tickets,tDiff:pct(ps.last7.tickets,ps.prior7.tickets),revenue:ps.last7.revenue,rDiff:pct(ps.last7.revenue,ps.prior7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),avgDiff:pct(avgP(ps.last7.tickets,ps.last7.revenue),avgP(ps.prior7.tickets,ps.prior7.revenue)),period:"7day"},
+          {label:"MTD",tickets:ps.mtd.tickets,tDiff:pct(ps.mtd.tickets,ps.lastMth.tickets),revenue:ps.mtd.revenue,rDiff:pct(ps.mtd.revenue,ps.lastMth.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),avgDiff:pct(avgP(ps.mtd.tickets,ps.mtd.revenue),avgP(ps.lastMth.tickets,ps.lastMth.revenue)),period:"mtd"},
         ];
         return (
           <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,marginBottom:16,overflow:"hidden"}}>
@@ -511,14 +508,19 @@ export default function Dashboard() {
               <div style={{overflow:"hidden",flex:1}}>
                 <div className="cw-ticker">
                   {[...items,...items].map((item,i)=>{
-                    const up=item.diff===null||+item.diff>=0;
+                    const tUp=item.tDiff===null||+item.tDiff>=0;
+                    const rUp=item.rDiff===null||+item.rDiff>=0;
+                    const avgUp=item.avgDiff===null||+item.avgDiff>=0;
                     return (
-                      <button key={i} onClick={()=>setTickerModal(item.period)} style={{display:"inline-flex",alignItems:"center",gap:10,padding:"10px 22px",background:"transparent",border:"none",borderRight:"1px solid #1a1e26",cursor:"pointer",whiteSpace:"nowrap",color:"inherit",fontFamily:"inherit"}}>
-                        <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{item.label}</span>
-                        <span style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{item.val}</span>
-                        <span style={{fontSize:11,color:"#7a8499"}}>{item.rev}</span>
-                        {item.avg&&<span style={{fontSize:11,color:"#f59e0b"}}>~{cur(+item.avg)}</span>}
-                        {item.diff!==null&&<span style={{fontSize:11,fontWeight:700,color:up?"#22c55e":"#ef4444"}}>{up?"▲":"▼"}{Math.abs(+item.diff)}%</span>}
+                      <button key={i} onClick={()=>setTickerModal(item.period)} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:"transparent",border:"none",borderRight:"1px solid #1a1e26",cursor:"pointer",whiteSpace:"nowrap",color:"inherit",fontFamily:"inherit"}}>
+                        <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginRight:4}}>{item.label}</span>
+                        <span style={{fontSize:12,color:"#7a8499"}}>Tkts:</span>
+                        <span style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{item.tickets?.toLocaleString()}</span>
+                        {item.tDiff!==null&&<span style={{fontSize:11,fontWeight:700,color:tUp?"#22c55e":"#ef4444"}}>{tUp?"▲":"▼"}{Math.abs(+item.tDiff)}%</span>}
+                        <span style={{fontSize:12,color:"#7a8499",marginLeft:4}}>Rev:</span>
+                        <span style={{fontSize:13,fontWeight:700,color:"#22c55e"}}>{cur(item.revenue)}</span>
+                        {item.rDiff!==null&&<span style={{fontSize:11,fontWeight:700,color:rUp?"#22c55e":"#ef4444"}}>{rUp?"▲":"▼"}{Math.abs(+item.rDiff)}%</span>}
+                        {item.avg&&<><span style={{fontSize:12,color:"#7a8499",marginLeft:4}}>Avg:</span><span style={{fontSize:13,fontWeight:700,color:"#f59e0b"}}>{cur(+item.avg)}</span>{item.avgDiff!==null&&<span style={{fontSize:11,fontWeight:700,color:avgUp?"#22c55e":"#ef4444"}}>{avgUp?"▲":"▼"}{Math.abs(+item.avgDiff)}%</span>}</>}
                       </button>
                     );
                   })}
@@ -682,15 +684,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>{"🏆"} Top Events</div>
-          <Table columns={[
-            {key:"event",label:"Event"},{key:"city",label:"City"},
-            {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
-            {key:"onSaleDays",label:"On-Sale Days",fmt:v=>v!==null?fmt(v)+" days":"-"},
-            {key:"tickets",label:"Tickets",fmt:v=>fmt(v)},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-            {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},{key:"avgDaily",label:"Avg/Day"},
-          ]} data={[...eventSummary].sort((a,b)=>b.revenue-a.revenue)} maxRows={25}/>
-
           {/* PREVIOUS EVENTS RESULTS */}
           <div style={{marginTop:28}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -796,62 +789,180 @@ export default function Dashboard() {
       {/* INSTANT VIEW */}
       {tab==="instant" && (
         <div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
-            <div style={{fontSize:14,fontWeight:700}}>⚡ Instant View — Revenue by City</div>
-            <div style={{display:"flex",gap:6}}>
-              {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
-                <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {instantViewData.length===0?(
-            <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"40px 20px",textAlign:"center",color:"#4d5568"}}>No sales data for this period.</div>
-          ):(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
-              {instantViewData.map((c,i)=>{
-                const ahead=c.tDiff===null||c.tDiff>=0;
-                const rAhead=c.rDiff===null||c.rDiff>=0;
-                return (
-                  <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,borderTop:"3px solid "+c.color,position:"relative"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-                      <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
-                      <div style={{width:10,height:10,borderRadius:"50%",background:c.color,marginTop:4}}/>
+
+          {/* PERIOD BLOCKS */}
+          {(()=>{
+            const ps=periodSales;
+            const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
+            const block=(label,curr,prev,lyVal,period)=>{
+              const tDiff=pct(curr.tickets,prev.tickets); const rDiff=pct(curr.revenue,prev.revenue);
+              const lyTDiff=pct(curr.tickets,lyVal.tickets); const lyRDiff=pct(curr.revenue,lyVal.revenue);
+              const tUp=tDiff===null||+tDiff>=0; const rUp=rDiff===null||+rDiff>=0;
+              const lyTUp=lyTDiff===null||+lyTDiff>=0; const lyRUp=lyRDiff===null||+lyRDiff>=0;
+              const avg=curr.tickets>0?curr.revenue/curr.tickets:0;
+              const prevAvg=prev.tickets>0?prev.revenue/prev.tickets:0;
+              const avgDiff=pct(avg,prevAvg);
+              const avgUp=avgDiff===null||+avgDiff>=0;
+              return (
+                <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:20,cursor:"pointer",flex:1,minWidth:260}} onClick={()=>setTickerModal(period)}>
+                  <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>{label}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Tickets</div>
+                      <div style={{fontSize:20,fontWeight:700,color:"#e4e8f0",fontFamily:"'Sora',sans-serif"}}>{curr.tickets.toLocaleString()}</div>
+                      {tDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:tUp?"#22c55e":"#ef4444",marginTop:2}}>{tUp?"▲":"▼"}{Math.abs(+tDiff)}% vs prev</div>}
                     </div>
-                    <div style={{fontSize:26,fontWeight:700,color:c.color,fontFamily:"'Sora',sans-serif",lineHeight:1,marginBottom:4}}>{cur(c.revenue)}</div>
-                    <div style={{fontSize:13,color:"#e4e8f0",marginBottom:2}}>{c.tickets.toLocaleString()} tickets</div>
-                    {c.avg>0&&<div style={{fontSize:12,color:"#f59e0b",marginBottom:10}}>~{cur(c.avg)} avg price</div>}
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {c.tDiff!==null&&(
-                        <span style={{fontSize:11,fontWeight:700,color:ahead?"#22c55e":"#ef4444",background:ahead?"#22c55e11":"#ef444411",padding:"2px 8px",borderRadius:6}}>
-                          {ahead?"▲":"▼"}{Math.abs(c.tDiff)}% tkts
-                        </span>
-                      )}
-                      {c.rDiff!==null&&(
-                        <span style={{fontSize:11,fontWeight:700,color:rAhead?"#22c55e":"#ef4444",background:rAhead?"#22c55e11":"#ef444411",padding:"2px 8px",borderRadius:6}}>
-                          {rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% rev
-                        </span>
-                      )}
+                    <div>
+                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Revenue</div>
+                      <div style={{fontSize:20,fontWeight:700,color:"#22c55e",fontFamily:"'Sora',sans-serif"}}>{cur(curr.revenue)}</div>
+                      {rDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:rUp?"#22c55e":"#ef4444",marginTop:2}}>{rUp?"▲":"▼"}{Math.abs(+rDiff)}% vs prev</div>}
                     </div>
-                    {c.prevTickets>0&&<div style={{fontSize:10,color:"#4d5568",marginTop:8}}>Prev: {c.prevTickets.toLocaleString()} tkts · {cur(c.prevRevenue)}</div>}
+                    <div>
+                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Avg Price</div>
+                      <div style={{fontSize:20,fontWeight:700,color:"#f59e0b",fontFamily:"'Sora',sans-serif"}}>{avg>0?cur(avg):"—"}</div>
+                      {avgDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:avgUp?"#22c55e":"#ef4444",marginTop:2}}>{avgUp?"▲":"▼"}{Math.abs(+avgDiff)}% vs prev</div>}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-          {/* Summary totals */}
-          {instantViewData.length>0&&(()=>{
-            const totT=instantViewData.reduce((s,c)=>s+c.tickets,0);
-            const totR=instantViewData.reduce((s,c)=>s+c.revenue,0);
-            const totAvg=totT>0?totR/totT:0;
+                  <div style={{borderTop:"1px solid #242a35",paddingTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>vs Last Year Tickets</div>
+                      <div style={{fontSize:12,color:"#e4e8f0",fontWeight:600}}>{lyVal.tickets>0?lyVal.tickets.toLocaleString():"No LY data"}</div>
+                      {lyTDiff!==null&&lyVal.tickets>0&&<div style={{fontSize:11,fontWeight:700,color:lyTUp?"#22c55e":"#ef4444"}}>{lyTUp?"▲":"▼"}{Math.abs(+lyTDiff)}%</div>}
+                    </div>
+                    <div>
+                      <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>vs Last Year Revenue</div>
+                      <div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{lyVal.revenue>0?cur(lyVal.revenue):"No LY data"}</div>
+                      {lyRDiff!==null&&lyVal.revenue>0&&<div style={{fontSize:11,fontWeight:700,color:lyRUp?"#22c55e":"#ef4444"}}>{lyRUp?"▲":"▼"}{Math.abs(+lyRDiff)}%</div>}
+                    </div>
+                  </div>
+                </div>
+              );
+            };
             return (
-              <div style={{marginTop:20,background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,display:"flex",gap:24,flexWrap:"wrap"}}>
-                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Tickets</div><div style={{fontSize:18,fontWeight:700,color:"#00d4aa"}}>{totT.toLocaleString()}</div></div>
-                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Revenue</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{cur(totR)}</div></div>
-                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Avg Ticket Price</div><div style={{fontSize:18,fontWeight:700,color:"#f59e0b"}}>{cur(totAvg)}</div></div>
-                <div><div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Active Cities</div><div style={{fontSize:18,fontWeight:700,color:"#6366f1"}}>{instantViewData.length}</div></div>
+              <div style={{display:"flex",gap:12,marginBottom:22,flexWrap:"wrap"}}>
+                {block("Yesterday",ps.yesterday,ps.dayBefore,ps.lyYesterday,"yesterday")}
+                {block("Last 7 Days",ps.last7,ps.prior7,ps.lyLast7,"7day")}
+                {block("Month to Date",ps.mtd,ps.lastMth,ps.lyMtd,"mtd")}
               </div>
             );
           })()}
+
+          {/* LIVE PACING VS PREVIOUS EVENT */}
+          {cityPacingComparison.length>0 && (
+            <div style={{marginBottom:22}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🔴🟢 Live Pacing vs Previous Event</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+                {[...cityPacingComparison].sort((a,b)=>a.daysToEnd-b.daysToEnd).map((c,i)=>{
+                  const ahead=c.ticketDiff>=0;
+                  const rAhead=c.revDiff>=0;
+                  const diffCol=ahead?"#22c55e":"#ef4444";
+                  const pct=c.prevAtPoint>0?Math.round(Math.abs(c.ticketDiff)/c.prevAtPoint*100):0;
+                  return (
+                    <div key={i} style={{background:"#13161c",border:"1px solid "+(ahead?"#22c55e33":"#ef444433"),borderRadius:12,padding:16,borderTop:"2px solid "+diffCol}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700}}>{c.city}</div>
+                          <div style={{fontSize:11,color:"#7a8499",marginTop:2}}>{c.event}</div>
+                          <div style={{fontSize:11,color:"#4d5568",marginTop:1}}>{c.daysToEnd}d to end</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:18,fontWeight:700,color:diffCol,fontFamily:"'Sora',sans-serif"}}>{ahead?"▲":"▼"} {Math.abs(c.ticketDiff).toLocaleString()}</div>
+                          <div style={{fontSize:10,color:diffCol}}>{ahead?"ahead":"behind"} tkts ({pct}%)</div>
+                          <div style={{fontSize:11,fontWeight:600,color:rAhead?"#22c55e":"#ef4444",marginTop:2}}>{rAhead?"▲":"▼"} £{Math.abs(c.revDiff).toLocaleString("en-GB",{minimumFractionDigits:0})} rev</div>
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Now</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.currTickets.toLocaleString()}</div>
+                          <div style={{fontSize:11,color:"#22c55e"}}>{"£"+c.currRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
+                        </div>
+                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Prev here</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#7a8499"}}>{c.prevAtPoint.toLocaleString()}</div>
+                          <div style={{fontSize:11,color:"#7a8499"}}>{"£"+c.prevRevAtPoint.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
+                        </div>
+                      </div>
+                      {c.forecastTickets&&(
+                        <div style={{background:"#6366f110",border:"1px solid #6366f130",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{fontSize:10,color:"#6366f1",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Forecast</div>
+                          <div style={{textAlign:"right"}}>
+                            <span style={{fontSize:14,fontWeight:700,color:"#6366f1"}}>{c.forecastTickets.toLocaleString()} tickets</span>
+                            <span style={{fontSize:11,color:"#6366f1",marginLeft:8}}>{"£"+c.forecastRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</span>
+                          </div>
+                        </div>
+                      )}
+                      <div style={{fontSize:10,color:"#4d5568",marginTop:8}}>vs {c.prevEvent} (final: {c.prevTotal.toLocaleString()} tkts · £{c.prevTotalRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})})</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* CITY CARDS — pacing-based comparison */}
+          <div style={{marginBottom:22}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🏙️ City Revenue Snapshot</div>
+            {instantViewData.length===0?(
+              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"30px 20px",textAlign:"center",color:"#4d5568"}}>No sales data for this period.</div>
+            ):(
+              <>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:12}}>
+                  {instantViewData.map((c)=>{
+                    const ahead=c.tDiff===null||c.tDiff>=0;
+                    const rAhead=c.rDiff===null||c.rDiff>=0;
+                    return (
+                      <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:16,borderTop:"3px solid "+c.color}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                          <div style={{fontSize:14,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
+                          <div style={{width:9,height:9,borderRadius:"50%",background:c.color}}/>
+                        </div>
+                        <div style={{fontSize:22,fontWeight:700,color:c.color,fontFamily:"'Sora',sans-serif",lineHeight:1}}>{cur(c.revenue)}</div>
+                        <div style={{fontSize:12,color:"#e4e8f0",marginTop:4}}>{c.tickets.toLocaleString()} tickets</div>
+                        {c.avg>0&&<div style={{fontSize:11,color:"#f59e0b",marginTop:2}}>~{cur(c.avg)} avg</div>}
+                        <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                          {c.tDiff!==null&&<span style={{fontSize:10,fontWeight:700,color:ahead?"#22c55e":"#ef4444",background:ahead?"#22c55e11":"#ef444411",padding:"2px 7px",borderRadius:5}}>{ahead?"▲":"▼"}{Math.abs(c.tDiff)}% tkts</span>}
+                          {c.rDiff!==null&&<span style={{fontSize:10,fontWeight:700,color:rAhead?"#22c55e":"#ef4444",background:rAhead?"#22c55e11":"#ef444411",padding:"2px 7px",borderRadius:5}}>{rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% rev</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{marginTop:12,background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"12px 16px",display:"flex",gap:24,flexWrap:"wrap"}}>
+                  {[["Total Tickets",instantViewData.reduce((s,c)=>s+c.tickets,0).toLocaleString(),"#00d4aa"],["Total Revenue",cur(instantViewData.reduce((s,c)=>s+c.revenue,0)),"#22c55e"],["Avg Ticket Price",cur(instantViewData.reduce((s,c)=>s+c.tickets,0)>0?instantViewData.reduce((s,c)=>s+c.revenue,0)/instantViewData.reduce((s,c)=>s+c.tickets,0):0),"#f59e0b"]].map(([l,v,col])=>(
+                    <div key={l}><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{l}</div><div style={{fontSize:16,fontWeight:700,color:col}}>{v}</div></div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* TOP 10 SALES DATES BY REVENUE */}
+          {(()=>{
+            const top10 = [...DATA].sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+            return (
+              <div>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🏆 Top 10 Sales Dates by Revenue</div>
+                <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+                    <thead><tr style={{background:"#1a1e26"}}>
+                      {["#","Date","Event","City","Revenue"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{top10.map((r,i)=>(
+                      <tr key={i} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#4d5568",fontWeight:700}}>{i+1}</td>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.date}</td>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.event}</td>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.city}</td>
+                        <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{cur(r.revenue)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
         </div>
       )}
 
@@ -906,7 +1017,30 @@ export default function Dashboard() {
             <input placeholder="Search events..." value={searchEvt} onChange={e=>setSearchEvt(e.target.value)} style={{...IS,marginBottom:14}}/>
 
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10,maxHeight:420,overflowY:"auto",paddingRight:4}}>
-              {allEvents.filter(e=>!searchEvt||e.toLowerCase().includes(searchEvt.toLowerCase())).map(evt => {
+              {(()=>{
+                const now = today;
+                const evtList = allEvents.filter(e=>!searchEvt||e.toLowerCase().includes(searchEvt.toLowerCase()));
+                // Sort: upcoming (furthest out first -> soonest start), then active (soonest end first), then completed (most recent end first)
+                return evtList.sort((a,b)=>{
+                  const edA=startDates[a]?addDays(startDates[a],EVENT_DURATION):null;
+                  const edB=startDates[b]?addDays(startDates[b],EVENT_DURATION):null;
+                  const sdA=startDates[a]||null;
+                  const sdB=startDates[b]||null;
+                  const activeA=edA&&edA>=now&&sdA&&sdA<=now;
+                  const activeB=edB&&edB>=now&&sdB&&sdB<=now;
+                  const upcomingA=sdA&&sdA>now;
+                  const upcomingB=sdB&&sdB>now;
+                  const completedA=edA&&edA<now;
+                  const completedB=edB&&edB<now;
+                  // Group priority: active=0, upcoming=1, completed=2, no date=3
+                  const priA=activeA?0:upcomingA?1:completedA?2:3;
+                  const priB=activeB?0:upcomingB?1:completedB?2:3;
+                  if(priA!==priB) return priA-priB;
+                  if(upcomingA&&upcomingB) return (sdA||"").localeCompare(sdB||""); // soonest start first
+                  if(completedA&&completedB) return (edB||"").localeCompare(edA||""); // most recent first
+                  return (edA||"").localeCompare(edB||"");
+                });
+              })().map(evt => {
                 const sd=startDates[evt]; const ed=sd?addDays(sd,EVENT_DURATION):null;
                 const daysToEnd=ed?daysBetween(today,ed):null;
                 const daysToStart=sd?daysBetween(today,sd):null;
