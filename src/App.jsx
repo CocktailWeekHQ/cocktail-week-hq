@@ -228,25 +228,41 @@ export default function Dashboard() {
     return Object.values(map).map(e => {
       const sd = startDates[e.event]; const ed = sd ? addDays(sd,EVENT_DURATION) : null;
       const fs = FIRST_SALE_DATES[e.event] || e.firstDate;
-      return {...e, revenue:Math.round(e.revenue*100)/100,
-        avgPrice:e.tickets>0 ? Math.round(e.revenue/e.tickets*100)/100 : 0,
-        avgDaily:e.days>0 ? Math.round(e.tickets/e.days*10)/10 : 0,
-        avgDailyRev:e.days>0 ? Math.round(e.revenue/e.days*100)/100 : 0,
+      const stats = eventStats[e.event] || {};
+      const freeRaw = stats.freeTickets!==""&&stats.freeTickets!==undefined ? +stats.freeTickets : 0;
+      const free = Math.min(freeRaw, e.tickets);
+      const paid = e.tickets - free;
+      const rev = Math.round(e.revenue*100)/100;
+      return {...e, revenue:rev,
+        freeTickets:free, paidTickets:paid,
+        avgPrice:paid>0 ? Math.round(rev/paid*100)/100 : 0,
+        avgDaily:e.days>0 ? Math.round(paid/e.days*10)/10 : 0,
+        avgDailyRev:e.days>0 ? Math.round(rev/e.days*100)/100 : 0,
         startDate:sd||"-", endDate:ed||"-", firstSale:fs||"-",
         onSaleDays: fs && sd ? Math.max(daysBetween(fs, sd),0) : null,
       };
     });
-  }, [filtered, startDates]);
+  }, [filtered, startDates, eventStats]);
 
   const citySummary = useMemo(() => {
     const map = {};
     filtered.forEach(d => {
-      if (!map[d.city]) map[d.city] = {city:d.city, tickets:0, revenue:0, events:new Set(), days:0};
+      if (!map[d.city]) map[d.city] = {city:d.city, tickets:0, revenue:0, free:0, events:new Set(), days:0};
       map[d.city].tickets+=d.tickets; map[d.city].revenue+=d.revenue; map[d.city].events.add(d.event); map[d.city].days++;
+      const stats=eventStats[d.event]||{};
+      const evtTotal=DATA.filter(x=>x.event===d.event).reduce((s,x)=>s+x.tickets,0);
+      const freeRaw=stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
+      const freeShare=evtTotal>0?Math.min(freeRaw,evtTotal)*d.tickets/evtTotal:0;
+      map[d.city].free+=freeShare;
     });
-    return Object.values(map).map(c => ({...c, revenue:Math.round(c.revenue*100)/100, eventCount:c.events.size,
-      avgPrice:c.tickets>0 ? Math.round(c.revenue/c.tickets*100)/100 : 0})).sort((a,b)=>b.revenue-a.revenue);
-  }, [filtered]);
+    return Object.values(map).map(c => {
+      const free=Math.round(c.free); const paid=c.tickets-free;
+      const rev=Math.round(c.revenue*100)/100;
+      return {...c, revenue:rev, eventCount:c.events.size,
+        freeTickets:free, paidTickets:paid,
+        avgPrice:paid>0?Math.round(rev/paid*100)/100:0};
+    }).sort((a,b)=>b.revenue-a.revenue);
+  }, [filtered, eventStats]);
 
   const comparisonData = useMemo(() => {
     return compareEvents.map((evt,i) => {
@@ -461,7 +477,7 @@ export default function Dashboard() {
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
     {id:"stats",label:"Event Stats",icon:"📋"},
     {id:"add",label:"Add Event",icon:"➕"},
-    {id:"overview",label:"Overview",icon:"📊"},
+    {id:"overview",label:"Company Stats",icon:"🏢"},
   ];
 
   return (
@@ -622,14 +638,24 @@ export default function Dashboard() {
               </div>
             );
           })()}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:22}}>
-            <KPI label="Total Tickets" value={fmt(totTickets)} color="#00d4aa" sub={fmt(eventSummary.length)+" events"}/>
-            <KPI label="Total Revenue" value={cur(totRevenue)} color="#22c55e"/>
-            <KPI label="Avg Ticket Price" value={cur(avgPrice)} color="#f59e0b"/>
-            <KPI label="Avg Daily Tickets" value={fmt(Math.round(totTickets/Math.max(filtered.length,1)))} color="#6366f1" sub="per selling day"/>
-            <KPI label="Avg Daily Revenue" value={cur(Math.round(totRevenue/Math.max(filtered.length,1)*100)/100)} color="#3b82f6"/>
-            <KPI label="Active Cities" value={fmt(citySummary.length)} color="#ec4899"/>
-          </div>
+          {/* Company Stats KPIs */}
+          {(()=>{
+            const totFree=eventSummary.reduce((s,e)=>s+(e.freeTickets||0),0);
+            const totPaid=totTickets-totFree;
+            const paidAvgPrice=totPaid>0?totRevenue/totPaid:0;
+            return (
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10,marginBottom:22}}>
+                <KPI label="Total Tickets" value={fmt(totTickets)} color="#00d4aa" sub={fmt(eventSummary.length)+" events"}/>
+                <KPI label="Free Tickets" value={fmt(totFree)} color="#7a8499"/>
+                <KPI label="Paid Tickets" value={fmt(totPaid)} color="#6366f1"/>
+                <KPI label="Total Revenue" value={cur(totRevenue)} color="#22c55e"/>
+                <KPI label="Avg Price (Paid)" value={paidAvgPrice>0?cur(paidAvgPrice):"—"} color="#f59e0b"/>
+                <KPI label="Avg Daily Sales" value={fmt(Math.round(totPaid/Math.max(filtered.length,1)))} color="#3b82f6" sub="paid tkts/day"/>
+                <KPI label="Avg Daily Revenue" value={cur(Math.round(totRevenue/Math.max(filtered.length,1)*100)/100)} color="#ec4899"/>
+                <KPI label="Active Cities" value={fmt(citySummary.length)} color="#00d4aa"/>
+              </div>
+            );
+          })()}
           <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:18}}>
             <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>{"\ud83c\udfd9\ufe0f"} Revenue by City</div>
             <SparkChart height={100} series={[{data:citySummary.map(c=>c.revenue),color:"#00d4aa",label:"Revenue",labels:citySummary.map(c=>c.city)}]}/>
@@ -856,7 +882,10 @@ export default function Dashboard() {
           {/* PERIOD BREAKDOWN BY CITY — toggleable */}
           <div style={{marginBottom:22}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:13,fontWeight:700}}>📍 Breakdown by City</div>
+              <div>
+                <div style={{fontSize:13,fontWeight:700}}>📍 Breakdown by City</div>
+                <div style={{fontSize:11,color:"#4d5568",marginTop:2}}>Comparison vs same days-to-end point in previous event for each city</div>
+              </div>
               <div style={{display:"flex",gap:6}}>
                 {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
                   <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"5px 12px",borderRadius:7,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
@@ -949,44 +978,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* CITY CARDS — pacing-based comparison */}
-          <div style={{marginBottom:22}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🏙️ City Revenue Snapshot</div>
-            {instantViewData.length===0?(
-              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"30px 20px",textAlign:"center",color:"#4d5568"}}>No sales data for this period.</div>
-            ):(
-              <>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:12}}>
-                  {instantViewData.map((c)=>{
-                    const ahead=c.tDiff===null||c.tDiff>=0;
-                    const rAhead=c.rDiff===null||c.rDiff>=0;
-                    return (
-                      <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:16,borderTop:"3px solid "+c.color}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                          <div style={{fontSize:14,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
-                          <div style={{width:9,height:9,borderRadius:"50%",background:c.color}}/>
-                        </div>
-                        <div style={{fontSize:22,fontWeight:700,color:c.color,fontFamily:"'Sora',sans-serif",lineHeight:1}}>{cur(c.revenue)}</div>
-                        <div style={{fontSize:12,color:"#e4e8f0",marginTop:4}}>{c.tickets.toLocaleString()} tickets</div>
-                        {c.avg>0&&<div style={{fontSize:11,color:"#f59e0b",marginTop:2}}>~{cur(c.avg)} avg</div>}
-                        <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
-                          {c.tDiff!==null&&<span style={{fontSize:10,fontWeight:700,color:ahead?"#22c55e":"#ef4444",background:ahead?"#22c55e11":"#ef444411",padding:"2px 7px",borderRadius:5}}>{ahead?"▲":"▼"}{Math.abs(c.tDiff)}% tkts</span>}
-                          {c.rDiff!==null&&<span style={{fontSize:10,fontWeight:700,color:rAhead?"#22c55e":"#ef4444",background:rAhead?"#22c55e11":"#ef444411",padding:"2px 7px",borderRadius:5}}>{rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% rev</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{marginTop:12,background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"12px 16px",display:"flex",gap:24,flexWrap:"wrap"}}>
-                  {[["Total Tickets",instantViewData.reduce((s,c)=>s+c.tickets,0).toLocaleString(),"#00d4aa"],["Total Revenue",cur(instantViewData.reduce((s,c)=>s+c.revenue,0)),"#22c55e"],["Avg Ticket Price",cur(instantViewData.reduce((s,c)=>s+c.tickets,0)>0?instantViewData.reduce((s,c)=>s+c.revenue,0)/instantViewData.reduce((s,c)=>s+c.tickets,0):0),"#f59e0b"]].map(([l,v,col])=>(
-                    <div key={l}><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>{l}</div><div style={{fontSize:16,fontWeight:700,color:col}}>{v}</div></div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* TOP 10 SALES DATES BY REVENUE */}
         </div>
       )}
 
@@ -1002,8 +993,12 @@ export default function Dashboard() {
             {key:"event",label:"Event"},{key:"city",label:"City"},
             {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
             {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
-            {key:"tickets",label:"Tickets",fmt:v=>fmt(v)},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-            {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},{key:"avgDaily",label:"Tickets/Day"},
+            {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
+            {key:"freeTickets",label:"Free Tickets",fmt:v=>fmt(v)},
+            {key:"paidTickets",label:"Paid Tickets",fmt:v=>fmt(v)},
+            {key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+            {key:"avgPrice",label:"Avg Price (Paid)",fmt:v=>cur(v)},
+            {key:"avgDaily",label:"Paid/Day"},
             {key:"avgDailyRev",label:"Rev/Day",fmt:v=>cur(v)},{key:"days",label:"Selling Days"},
           ]} data={eventSummary} maxRows={100}/>
         </div>
@@ -1018,8 +1013,12 @@ export default function Dashboard() {
             ))}
           </div>
           <Table columns={[
-            {key:"city",label:"City"},{key:"tickets",label:"Tickets",fmt:v=>fmt(v)},
-            {key:"revenue",label:"Revenue",fmt:v=>cur(v)},{key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},
+            {key:"city",label:"City"},
+            {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
+            {key:"freeTickets",label:"Free Tickets",fmt:v=>fmt(v)},
+            {key:"paidTickets",label:"Paid Tickets",fmt:v=>fmt(v)},
+            {key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+            {key:"avgPrice",label:"Avg Price (Paid)",fmt:v=>cur(v)},
             {key:"eventCount",label:"Events"},{key:"days",label:"Selling Days"},
           ]} data={citySummary}/>
         </div>
