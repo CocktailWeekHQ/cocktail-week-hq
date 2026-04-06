@@ -342,6 +342,10 @@ export default function Dashboard() {
   // Instant View
   const [instantPeriod, setInstantPeriod] = useState("yesterday");
   const [dailyMode, setDailyMode] = useState("total"); // "total" | "byevent"
+  const [dailyFrom, setDailyFrom] = useState("");
+  const [dailyTo, setDailyTo] = useState("");
+  const [dailyCity, setDailyCity] = useState("All");
+  const [dailyEvent, setDailyEvent] = useState("All");
   const CITY_COLORS = {"Belfast":"#6366f1","Cardiff":"#ec4899","Coventry":"#f59e0b","Dundee":"#00d4aa","Dunfermline":"#3b82f6","Inverness":"#22c55e","Leeds":"#a78bfa","Liverpool":"#ef4444","Manchester":"#f97316","Newcastle":"#06b6d4","Nottingham":"#84cc16","Perth":"#e11d48","Reading":"#8b5cf6","Sheffield":"#14b8a6","St Andrews":"#fbbf24","Stirling":"#60a5fa","Sunderland":"#fb923c","York":"#34d399"};
   const instantViewData = useMemo(() => {
     const ps = periodSales;
@@ -476,15 +480,13 @@ export default function Dashboard() {
     {id:"daily",label:"Daily",icon:"📅"},
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
     {id:"stats",label:"Event Stats",icon:"📋"},
-    {id:"add",label:"Add Event",icon:"➕"},
-    {id:"overview",label:"Company Stats",icon:"🏢"},
   ];
 
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px"}}>
 
-      {/* GLOBAL FILTER BAR — shown on all tabs except Event Stats */}
-      {tab!=="stats" && (
+      {/* GLOBAL FILTER BAR — only on By Event and By City */}
+      {(tab==="events"||tab==="cities") && (
         <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
           <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginRight:4}}>Filters</span>
           {[
@@ -602,385 +604,6 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* OVERVIEW */}
-      {tab==="overview" && (
-        <div>
-          {/* Period Sales Cards */}
-          {(()=>{
-            const ps=periodSales;
-            const card=(label,curr,prev,lyVal,period,unit)=>{
-              const diff=prev.tickets>0?Math.round((curr.tickets-prev.tickets)/prev.tickets*100):null;
-              const lyDiff=lyVal.tickets>0?Math.round((curr.tickets-lyVal.tickets)/lyVal.tickets*100):null;
-              const rDiff=prev.revenue>0?Math.round((curr.revenue-prev.revenue)/prev.revenue*100):null;
-              const up=diff===null||diff>=0; const lyUp=lyDiff===null||lyDiff>=0; const rUp=rDiff===null||rDiff>=0;
-              const avgP=curr.tickets>0?curr.revenue/curr.tickets:0;
-              return (
-                <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,cursor:"pointer"}} onClick={()=>setTickerModal(period)}>
-                  <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,fontWeight:600}}>{label}</div>
-                  <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                    <div style={{fontSize:22,fontWeight:700,color:"#e4e8f0",fontFamily:"'Sora',sans-serif",lineHeight:1}}>{fmt(curr.tickets)}</div>
-                    <div style={{fontSize:13,color:"#22c55e",fontWeight:600}}>{cur(curr.revenue)}</div>
-                    {avgP>0&&<div style={{fontSize:11,color:"#f59e0b"}}>~{cur(avgP)} avg</div>}
-                  </div>
-                  <div style={{display:"flex",gap:10,marginTop:10,flexWrap:"wrap"}}>
-                    {diff!==null&&<div style={{fontSize:11,color:up?"#22c55e":"#ef4444",fontWeight:600}}>{up?"\u25b2":"\u25bc"}{Math.abs(diff)}% tkts vs prev {unit}</div>}
-                    {rDiff!==null&&<div style={{fontSize:11,color:rUp?"#22c55e":"#ef4444"}}>{rUp?"\u25b2":"\u25bc"}{Math.abs(rDiff)}% rev</div>}
-                    {lyDiff!==null&&<div style={{fontSize:11,color:lyUp?"#22c55e":"#ef4444"}}>LY: {lyUp?"\u25b2":"\u25bc"}{Math.abs(lyDiff)}%</div>}
-                  </div>
-                </div>
-              );
-            };
-            return (
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12,marginBottom:22}}>
-                {card("Yesterday",ps.yesterday,ps.dayBefore,ps.lyYesterday,"yesterday","day")}
-                {card("Last 7 Days",ps.last7,ps.prior7,ps.lyLast7,"7day","7d")}
-                {card("Month to Date",ps.mtd,ps.lastMth,ps.lyMtd,"mtd","month")}
-              </div>
-            );
-          })()}
-          {/* Company Stats KPIs */}
-          {(()=>{
-            const totFree=eventSummary.reduce((s,e)=>s+(e.freeTickets||0),0);
-            const totPaid=totTickets-totFree;
-            const paidAvgPrice=totPaid>0?totRevenue/totPaid:0;
-            return (
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10,marginBottom:22}}>
-                <KPI label="Total Tickets" value={fmt(totTickets)} color="#00d4aa" sub={fmt(eventSummary.length)+" events"}/>
-                <KPI label="Free Tickets" value={fmt(totFree)} color="#7a8499"/>
-                <KPI label="Paid Tickets" value={fmt(totPaid)} color="#6366f1"/>
-                <KPI label="Total Revenue" value={cur(totRevenue)} color="#22c55e"/>
-                <KPI label="Avg Price (Paid)" value={paidAvgPrice>0?cur(paidAvgPrice):"—"} color="#f59e0b"/>
-                <KPI label="Avg Daily Sales" value={fmt(Math.round(totPaid/Math.max(filtered.length,1)))} color="#3b82f6" sub="paid tkts/day"/>
-                <KPI label="Avg Daily Revenue" value={cur(Math.round(totRevenue/Math.max(filtered.length,1)*100)/100)} color="#ec4899"/>
-                <KPI label="Active Cities" value={fmt(citySummary.length)} color="#00d4aa"/>
-              </div>
-            );
-          })()}
-          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:18}}>
-            <div style={{fontSize:13,fontWeight:600,marginBottom:14}}>{"\ud83c\udfd9\ufe0f"} Revenue by City</div>
-            <SparkChart height={100} series={[{data:citySummary.map(c=>c.revenue),color:"#00d4aa",label:"Revenue",labels:citySummary.map(c=>c.city)}]}/>
-          </div>
-          {cityPacingComparison.length>0 && (
-            <div style={{marginBottom:22}}>
-              <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>{"🔴🟢"} Live Pacing vs Previous Event</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
-                {[...cityPacingComparison].sort((a,b)=>a.daysToEnd-b.daysToEnd).map((c,i)=>{
-                  const ahead=c.ticketDiff>=0;
-                  const diffCol=ahead?"#22c55e":"#ef4444";
-                  const pct=c.prevAtPoint>0?Math.round(Math.abs(c.ticketDiff)/c.prevAtPoint*100):0;
-                  return (
-                    <div key={i} style={{background:"#13161c",border:"1px solid "+(ahead?"#22c55e33":"#ef444433"),borderRadius:12,padding:16,borderTop:"2px solid "+diffCol}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:700}}>{c.city}</div>
-                          <div style={{fontSize:11,color:"#7a8499",marginTop:2}}>{c.event}</div>
-                          <div style={{fontSize:11,color:"#4d5568",marginTop:1}}>{c.daysToEnd}d to end</div>
-                        </div>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontSize:18,fontWeight:700,color:diffCol,fontFamily:"'Sora',sans-serif"}}>{ahead?"▲":"▼"} {Math.abs(c.ticketDiff).toLocaleString()}</div>
-                          <div style={{fontSize:10,color:diffCol}}>{ahead?"ahead":"behind"} ({pct}%)</div>
-                        </div>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Now</div>
-                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.currTickets.toLocaleString()}</div>
-                          <div style={{fontSize:11,color:"#22c55e"}}>{"£"+c.currRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
-                        </div>
-                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Prev here</div>
-                          <div style={{fontSize:15,fontWeight:700,color:"#7a8499"}}>{c.prevAtPoint.toLocaleString()}</div>
-                          <div style={{fontSize:11,color:"#7a8499"}}>{"£"+c.prevRevAtPoint.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
-                        </div>
-                      </div>
-                      {c.forecastTickets && (
-                        <div style={{background:"#6366f110",border:"1px solid #6366f130",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div style={{fontSize:10,color:"#6366f1",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Forecast</div>
-                          <div style={{textAlign:"right"}}>
-                            <span style={{fontSize:14,fontWeight:700,color:"#6366f1"}}>{c.forecastTickets.toLocaleString()} tickets</span>
-                            <span style={{fontSize:11,color:"#6366f1",marginLeft:8}}>{"£"+c.forecastRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div style={{fontSize:10,color:"#4d5568",marginTop:8}}>vs {c.prevEvent} (final: {c.prevTotal.toLocaleString()} tkts)</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* PREVIOUS EVENTS RESULTS */}
-          <div style={{marginTop:28}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:600}}>{"📋"} Previous Events Results</div>
-              <button onClick={()=>{setResultForm(BLANK_RESULT);setEditResultIdx(null);setShowResultForm(v=>!v);}}
-                style={{padding:"6px 14px",background:showResultForm&&editResultIdx===null?"#242a35":"#00d4aa22",border:"1px solid "+(showResultForm&&editResultIdx===null?"#3a4050":"#00d4aa55"),borderRadius:8,color:showResultForm&&editResultIdx===null?"#7a8499":"#00d4aa",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                {showResultForm&&editResultIdx===null?"✕ Cancel":"＋ Add Result"}
-              </button>
-            </div>
-
-            {/* ADD / EDIT FORM */}
-            {showResultForm && (
-              <div style={{background:"#13161c",border:"1px solid #00d4aa33",borderRadius:12,padding:18,marginBottom:16}}>
-                <div style={{fontSize:12,fontWeight:600,color:"#00d4aa",marginBottom:14}}>{editResultIdx!==null?"✏️ Edit Result":"＋ New Event Result"}</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:14}}>
-                  {[
-                    {k:"event",label:"Event",ph:"e.g. Newcastle CW 2025"},
-                    {k:"totalRevenue",label:"Total Revenue (£)",ph:"0.00"},
-                    {k:"ticketRevenue",label:"Ticket Revenue (£)",ph:"0.00"},
-                    {k:"tickets",label:"Tickets",ph:"0"},
-                    {k:"addOns",label:"Add-ons",ph:"0"},
-                    {k:"freeTickets",label:"Free Tickets",ph:"0"},
-                    {k:"paidTickets",label:"Paid Tickets",ph:"0"},
-                    {k:"repCommission",label:"Rep Commission (£)",ph:"0.00"},
-                    {k:"bartenderRevenue",label:"Bartender Revenue (£)",ph:"0.00"},
-                    {k:"avgPrice",label:"Avg Price Per Ticket (£)",ph:"0.00"},
-                  ].map(({k,label,ph}) => (
-                    <div key={k}>
-                      <label style={{display:"block",fontSize:10,fontWeight:600,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginBottom:4}}>{label}</label>
-                      {k==="event" ? (
-                        <input list="evt-list" value={resultForm[k]} onChange={e=>setResultForm(f=>({...f,[k]:e.target.value}))}
-                          placeholder={ph} style={{padding:"7px 10px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:8,color:"#e4e8f0",fontSize:12.5,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box"}}/>
-                      ) : (
-                        <input type="number" step="any" value={resultForm[k]} onChange={e=>setResultForm(f=>({...f,[k]:e.target.value}))}
-                          placeholder={ph} style={{padding:"7px 10px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:8,color:"#e4e8f0",fontSize:12.5,fontFamily:"inherit",outline:"none",width:"100%",boxSizing:"border-box"}}/>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <datalist id="evt-list">{allEvents.map(e=><option key={e} value={e}/>)}</datalist>
-                <div style={{display:"flex",gap:10}}>
-                  <button onClick={()=>{
-                    if(!resultForm.event.trim()) return;
-                    setEventResults(prev => {
-                      const next = [...prev];
-                      if(editResultIdx!==null) next[editResultIdx]={...resultForm}; else next.push({...resultForm});
-                      return next;
-                    });
-                    setShowResultForm(false); setEditResultIdx(null); setResultForm(BLANK_RESULT);
-                  }} style={{padding:"8px 20px",background:"#00d4aa",border:"none",borderRadius:8,color:"#0b0d11",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
-                    {editResultIdx!==null?"Save Changes":"Add Result"}
-                  </button>
-                  {editResultIdx!==null && <button onClick={()=>{
-                    setEventResults(prev=>prev.filter((_,i)=>i!==editResultIdx));
-                    setShowResultForm(false); setEditResultIdx(null);
-                  }} style={{padding:"8px 16px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:8,color:"#ef4444",fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Delete</button>}
-                  <button onClick={()=>{setShowResultForm(false);setEditResultIdx(null);}} style={{padding:"8px 16px",background:"#242a35",border:"1px solid #3a4050",borderRadius:8,color:"#7a8499",fontSize:12.5,cursor:"pointer"}}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {eventResults.length===0 ? (
-              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"28px 20px",textAlign:"center",color:"#4d5568",fontSize:13}}>
-                No results added yet — click <span style={{color:"#00d4aa"}}>＋ Add Result</span> after each event wraps up.
-              </div>
-            ) : (
-              <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
-                  <thead><tr style={{background:"#1a1e26"}}>
-                    {["Event","Total Revenue","Ticket Revenue","Tickets","Add-ons","Free Tickets","Paid Tickets","Rep Commission","Bartender Revenue","Avg Price / Ticket",""].map(h=>(
-                      <th key={h} onClick={()=>ck&&setStatSort(s=>({col:ck,dir:s.col===ck&&s.dir==="asc"?"desc":"asc"}))} style={{padding:"10px 12px",textAlign:"left",color:ck&&statSort.col===ck?"#00d4aa":"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap",cursor:ck?"pointer":"default",userSelect:"none"}}>
-                        {h}{ck&&statSort.col===ck?(statSort.dir==="asc"?" ↑":" ↓"):""}
-                      </th>
-                    ))}
-                  </tr></thead>
-                  <tbody>{eventResults.map((r,i)=>(
-                    <tr key={i} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
-                      <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap"}}>{r.event||"—"}</td>
-                      {[r.totalRevenue,r.ticketRevenue].map((v,j)=>(
-                        <td key={j} style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v!==""&&v!==undefined?cur(+v):"—"}</td>
-                      ))}
-                      {[r.tickets,r.addOns,r.freeTickets,r.paidTickets].map((v,j)=>(
-                        <td key={j} style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v!==""&&v!==undefined?fmt(+v):"—"}</td>
-                      ))}
-                      {[r.repCommission,r.bartenderRevenue].map((v,j)=>(
-                        <td key={j} style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v!==""&&v!==undefined?cur(+v):"—"}</td>
-                      ))}
-                      <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#6366f1",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{r.avgPrice!==""&&r.avgPrice!==undefined?cur(+r.avgPrice):"—"}</td>
-                      <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b"}}>
-                        <button onClick={()=>{setResultForm({...r});setEditResultIdx(i);setShowResultForm(true);}}
-                          style={{padding:"3px 10px",background:"#242a35",border:"1px solid #3a4050",borderRadius:6,color:"#7a8499",fontSize:11,cursor:"pointer"}}>Edit</button>
-                      </td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-
-      {/* INSTANT VIEW */}
-      {tab==="instant" && (
-        <div>
-
-          {/* PERIOD SUMMARY BLOCKS */}
-          {(()=>{
-            const ps=periodSales;
-            const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
-            const diffs=(curr,prev,lyVal)=>({
-              tDiff:pct(curr.tickets,prev.tickets), rDiff:pct(curr.revenue,prev.revenue),
-              lyTDiff:pct(curr.tickets,lyVal.tickets), lyRDiff:pct(curr.revenue,lyVal.revenue),
-              avg:curr.tickets>0?curr.revenue/curr.tickets:0,
-              prevAvg:prev.tickets>0?prev.revenue/prev.tickets:0,
-            });
-            const periods=[
-              {label:"Yesterday",curr:ps.yesterday,prev:ps.dayBefore,ly:ps.lyYesterday,id:"yesterday"},
-              {label:"Last 7 Days",curr:ps.last7,prev:ps.prior7,ly:ps.lyLast7,id:"7day"},
-              {label:"Month to Date",curr:ps.mtd,prev:ps.lastMth,ly:ps.lyMtd,id:"mtd"},
-            ];
-            return (
-              <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-                {periods.map(p=>{
-                  const d=diffs(p.curr,p.prev,p.ly);
-                  const avgDiff=pct(d.avg,d.prevAvg);
-                  return (
-                    <div key={p.id} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,flex:1,minWidth:240,cursor:"pointer"}} onClick={()=>setTickerModal(p.id)}>
-                      <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>{p.label}</div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
-                        <div>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Tickets</div>
-                          <div style={{fontSize:18,fontWeight:700,color:"#e4e8f0"}}>{p.curr.tickets.toLocaleString()}</div>
-                          {d.tDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+d.tDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+d.tDiff>=0?"▲":"▼"}{Math.abs(+d.tDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+d.tDiff>=0?"+":""}{(p.curr.tickets-p.prev.tickets).toLocaleString()})</span></div>}
-                        </div>
-                        <div>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Revenue</div>
-                          <div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{cur(p.curr.revenue)}</div>
-                          {d.rDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+d.rDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+d.rDiff>=0?"▲":"▼"}{Math.abs(+d.rDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+d.rDiff>=0?"+":""}{cur(Math.round((p.curr.revenue-p.prev.revenue)*100)/100)})</span></div>}
-                        </div>
-                        <div>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Avg Price</div>
-                          <div style={{fontSize:18,fontWeight:700,color:"#f59e0b"}}>{d.avg>0?cur(d.avg):"—"}</div>
-                          {avgDiff!==null&&d.prevAvg>0&&<div style={{fontSize:11,fontWeight:700,color:+avgDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+avgDiff>=0?"▲":"▼"}{Math.abs(+avgDiff)}%</div>}
-                        </div>
-                      </div>
-                      {(p.ly.tickets>0||p.ly.revenue>0)&&(
-                        <div style={{borderTop:"1px solid #1e222b",paddingTop:8,display:"flex",gap:14,flexWrap:"wrap"}}>
-                          <div>
-                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Tickets</div>
-                            <div style={{fontSize:12,color:d.lyTDiff!==null&&+d.lyTDiff>=0?"#22c55e":"#ef4444",fontWeight:600}}>
-                              {p.ly.tickets.toLocaleString()} {d.lyTDiff!==null&&<span>({+d.lyTDiff>=0?"▲":"▼"}{Math.abs(+d.lyTDiff)}%)</span>}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Revenue</div>
-                            <div style={{fontSize:12,color:d.lyRDiff!==null&&+d.lyRDiff>=0?"#22c55e":"#ef4444",fontWeight:600}}>
-                              {cur(p.ly.revenue)} {d.lyRDiff!==null&&<span>({+d.lyRDiff>=0?"▲":"▼"}{Math.abs(+d.lyRDiff)}%)</span>}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {/* PERIOD BREAKDOWN BY CITY — toggleable */}
-          <div style={{marginBottom:22}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:700}}>📍 Breakdown by City</div>
-                <div style={{fontSize:11,color:"#4d5568",marginTop:2}}>Comparison vs same days-to-end point in previous event for each city</div>
-              </div>
-              <div style={{display:"flex",gap:6}}>
-                {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
-                  <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"5px 12px",borderRadius:7,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
-                ))}
-              </div>
-            </div>
-            {instantViewData.length===0?(
-              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"20px",textAlign:"center",color:"#4d5568",fontSize:13}}>No city sales for this period.</div>
-            ):(
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
-                {instantViewData.map(c=>{
-                  const ahead=c.tDiff===null||c.tDiff>=0;
-                  const rAhead=c.rDiff===null||c.rDiff>=0;
-                  return (
-                    <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:14,borderLeft:"3px solid "+c.color}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                        <div style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
-                        <div>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Tickets</div>
-                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.tickets.toLocaleString()}</div>
-                          {c.tDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:ahead?"#22c55e":"#ef4444"}}>{ahead?"▲":"▼"}{Math.abs(c.tDiff)}% ({ahead?"+":""}{(c.tickets-c.prevTickets).toLocaleString()})</div>}
-                        </div>
-                        <div>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Revenue</div>
-                          <div style={{fontSize:15,fontWeight:700,color:c.color}}>{cur(c.revenue)}</div>
-                          {c.rDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:rAhead?"#22c55e":"#ef4444"}}>{rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% ({rAhead?"+":""}{cur(Math.round((c.revenue-c.prevRevenue)*100)/100)})</div>}
-                        </div>
-                      </div>
-                      {c.avg>0&&<div style={{fontSize:10,color:"#f59e0b"}}>Avg: ~{cur(c.avg)}</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* LIVE PACING VS PREVIOUS EVENT */}
-          {cityPacingComparison.length>0 && (
-            <div style={{marginBottom:22}}>
-              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🔴🟢 Live Pacing vs Previous Event</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
-                {[...cityPacingComparison].sort((a,b)=>a.daysToEnd-b.daysToEnd).map((c,i)=>{
-                  const ahead=c.ticketDiff>=0;
-                  const rAhead=c.revDiff>=0;
-                  const diffCol=ahead?"#22c55e":"#ef4444";
-                  const pct=c.prevAtPoint>0?Math.round(Math.abs(c.ticketDiff)/c.prevAtPoint*100):0;
-                  return (
-                    <div key={i} style={{background:"#13161c",border:"1px solid "+(ahead?"#22c55e33":"#ef444433"),borderRadius:12,padding:16,borderTop:"2px solid "+diffCol}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                        <div>
-                          <div style={{fontSize:13,fontWeight:700}}>{c.city}</div>
-                          <div style={{fontSize:11,color:"#7a8499",marginTop:2}}>{c.event}</div>
-                          <div style={{fontSize:11,color:"#4d5568",marginTop:1}}>{c.daysToEnd}d to end</div>
-                        </div>
-                        <div style={{textAlign:"right"}}>
-                          <div style={{fontSize:18,fontWeight:700,color:diffCol,fontFamily:"'Sora',sans-serif"}}>{ahead?"▲":"▼"} {Math.abs(c.ticketDiff).toLocaleString()}</div>
-                          <div style={{fontSize:10,color:diffCol}}>{ahead?"ahead":"behind"} tkts ({pct}%)</div>
-                          <div style={{fontSize:11,fontWeight:600,color:rAhead?"#22c55e":"#ef4444",marginTop:2}}>{rAhead?"▲":"▼"} £{Math.abs(c.revDiff).toLocaleString("en-GB",{minimumFractionDigits:0})} rev</div>
-                        </div>
-                      </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Now</div>
-                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.currTickets.toLocaleString()}</div>
-                          <div style={{fontSize:11,color:"#22c55e"}}>{"£"+c.currRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
-                        </div>
-                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
-                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Prev here</div>
-                          <div style={{fontSize:15,fontWeight:700,color:"#7a8499"}}>{c.prevAtPoint.toLocaleString()}</div>
-                          <div style={{fontSize:11,color:"#7a8499"}}>{"£"+c.prevRevAtPoint.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
-                        </div>
-                      </div>
-                      {c.forecastTickets&&(
-                        <div style={{background:"#6366f110",border:"1px solid #6366f130",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div style={{fontSize:10,color:"#6366f1",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Forecast</div>
-                          <div style={{textAlign:"right"}}>
-                            <span style={{fontSize:14,fontWeight:700,color:"#6366f1"}}>{c.forecastTickets.toLocaleString()} tickets</span>
-                            <span style={{fontSize:11,color:"#6366f1",marginLeft:8}}>{"£"+c.forecastRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div style={{fontSize:10,color:"#4d5568",marginTop:8}}>vs {c.prevEvent} (final: {c.prevTotal.toLocaleString()} tkts · £{c.prevTotalRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})})</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-        </div>
-      )}
-
       {/* BY EVENT */}
       {tab==="events" && (
         <div>
@@ -1027,36 +650,81 @@ export default function Dashboard() {
       {/* DAILY */}
       {tab==="daily" && (
         <div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
-            <div style={{fontSize:12,color:"#7a8499"}}>{fmt(filtered.length)} daily records</div>
+          {/* Daily Filters */}
+          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"12px 14px",marginBottom:14,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2}}>Filters</span>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>From</span>
+              <input type="date" value={dailyFrom} onChange={e=>setDailyFrom(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>To</span>
+              <input type="date" value={dailyTo} onChange={e=>setDailyTo(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>City</span>
+              <select value={dailyCity} onChange={e=>{setDailyCity(e.target.value);setDailyEvent("All");}} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
+                <option value="All">All Cities</option>{CITIES_LIST.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Event</span>
+              <select value={dailyEvent} onChange={e=>setDailyEvent(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
+                <option value="All">All Events</option>
+                {(dailyCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===dailyCity))).map(e=><option key={e}>{e}</option>)}
+              </select>
+            </div>
+            {(dailyFrom||dailyTo||dailyCity!=="All"||dailyEvent!=="All")&&(
+              <button onClick={()=>{setDailyFrom("");setDailyTo("");setDailyCity("All");setDailyEvent("All");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+            )}
+          </div>
+
+          {/* Mode toggle */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:12,color:"#7a8499"}}>
+              {(()=>{
+                const base=DATA.filter(d=>
+                  (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
+                  (dailyCity==="All"||d.city===dailyCity)&&(dailyEvent==="All"||d.event===dailyEvent)
+                );
+                return fmt(base.length)+" records";
+              })()}
+            </div>
             <div style={{display:"flex",gap:6}}>
               {[["total","Total by Day"],["byevent","By Event"]].map(([v,l])=>(
                 <button key={v} onClick={()=>setDailyMode(v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyMode===v?"#00d4aa":"#242a35"),background:dailyMode===v?"#00d4aa22":"transparent",color:dailyMode===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:dailyMode===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
               ))}
             </div>
           </div>
-          {dailyMode==="byevent" ? (
-            <Table columns={[
-              {key:"date",label:"Date"},{key:"event",label:"Event"},{key:"city",label:"City"},
-              {key:"tickets",label:"Tickets"},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-              {key:"avgPrice",label:"Avg Price",fmt:(v,row)=>row.tickets>0?cur(row.revenue/row.tickets):"-"},
-            ]} data={filtered.slice().sort((a,b)=>b.date.localeCompare(a.date))} maxRows={300}/>
-          ) : (
-            <Table columns={[
-              {key:"date",label:"Date"},
-              {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
-              {key:"revenue",label:"Total Revenue",fmt:v=>cur(v)},
-              {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},
-              {key:"events",label:"Events"},
-            ]} data={(()=>{
-              const map={};
-              filtered.forEach(d=>{
-                if(!map[d.date]) map[d.date]={date:d.date,tickets:0,revenue:0,evtSet:new Set()};
-                map[d.date].tickets+=d.tickets; map[d.date].revenue+=d.revenue; map[d.date].evtSet.add(d.event);
-              });
-              return Object.values(map).map(d=>({...d,revenue:Math.round(d.revenue*100)/100,avgPrice:d.tickets>0?Math.round(d.revenue/d.tickets*100)/100:0,events:d.evtSet.size})).sort((a,b)=>b.date.localeCompare(a.date));
-            })()} maxRows={300}/>
-          )}
+
+          {(()=>{
+            const dailyFiltered = DATA.filter(d=>
+              (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
+              (dailyCity==="All"||d.city===dailyCity)&&(dailyEvent==="All"||d.event===dailyEvent)
+            );
+            if(dailyMode==="byevent") return (
+              <Table columns={[
+                {key:"date",label:"Date"},{key:"event",label:"Event"},{key:"city",label:"City"},
+                {key:"tickets",label:"Tickets"},{key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+                {key:"avgPrice",label:"Avg Price",fmt:(v,row)=>row.tickets>0?cur(row.revenue/row.tickets):"-"},
+              ]} data={dailyFiltered.slice().sort((a,b)=>b.date.localeCompare(a.date))} maxRows={300}/>
+            );
+            const map={};
+            dailyFiltered.forEach(d=>{
+              if(!map[d.date]) map[d.date]={date:d.date,tickets:0,revenue:0,evtSet:new Set()};
+              map[d.date].tickets+=d.tickets; map[d.date].revenue+=d.revenue; map[d.date].evtSet.add(d.event);
+            });
+            const rows=Object.values(map).map(d=>({...d,revenue:Math.round(d.revenue*100)/100,avgPrice:d.tickets>0?Math.round(d.revenue/d.tickets*100)/100:0,events:d.evtSet.size})).sort((a,b)=>b.date.localeCompare(a.date));
+            return (
+              <Table columns={[
+                {key:"date",label:"Date"},
+                {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
+                {key:"revenue",label:"Total Revenue",fmt:v=>cur(v)},
+                {key:"avgPrice",label:"Avg Price",fmt:v=>cur(v)},
+                {key:"events",label:"Events"},
+              ]} data={rows} maxRows={300}/>
+            );
+          })()}
         </div>
       )}
 
@@ -1202,6 +870,36 @@ export default function Dashboard() {
             <p style={{fontSize:12,color:"#7a8499",marginBottom:0}}>Tickets and revenue auto-filled from sales data. Enter free tickets, rep commission and bartender revenue after each event.</p>
           </div>
 
+
+          {/* EVENT STATS KPI SUMMARY */}
+          {(()=>{
+            const totT=completedEventsList.reduce((s,e)=>s+e.totalTickets,0);
+            const totFree=completedEventsList.reduce((s,e)=>s+(e.freeTickets||0),0);
+            const totPaid=completedEventsList.reduce((s,e)=>s+(e.paidTickets||0),0);
+            const totRev=completedEventsList.reduce((s,e)=>s+e.ticketRevenue,0);
+            const cities=new Set(completedEventsList.map(e=>e.city)).size;
+            // Avg daily paid tickets: total paid / total selling days across all completed events
+            const totalDays=completedEventsList.reduce((s,e)=>{
+              const evtRows=DATA.filter(d=>d.event===e.event);
+              return s+(evtRows.length||0);
+            },0);
+            const avgDailyPaid=totalDays>0?totPaid/totalDays:0;
+            const avgDailyRev=totalDays>0?totRev/totalDays:0;
+            const avgPrice=totPaid>0?totRev/totPaid:0;
+            return (
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:20}}>
+                <KPI label="Total Tickets" value={fmt(totT)} color="#00d4aa" sub={completedEventsList.length+" events"}/>
+                <KPI label="Free Tickets" value={fmt(totFree)} color="#7a8499"/>
+                <KPI label="Paid Tickets" value={fmt(totPaid)} color="#6366f1"/>
+                <KPI label="Total Revenue" value={cur(Math.round(totRev*100)/100)} color="#22c55e"/>
+                <KPI label="Avg Price (Paid)" value={avgPrice>0?cur(avgPrice):"—"} color="#f59e0b"/>
+                <KPI label="Avg Daily Sales" value={fmt(Math.round(avgDailyPaid*10)/10)} color="#3b82f6" sub="paid tkts/day"/>
+                <KPI label="Avg Daily Revenue" value={cur(Math.round(avgDailyRev*100)/100)} color="#ec4899"/>
+                <KPI label="Active Cities" value={fmt(cities)} color="#00d4aa"/>
+              </div>
+            );
+          })()}
+
           {/* INLINE EDIT FORM */}
           {editingStatEvt && (
             <div style={{background:"#13161c",border:"1px solid #00d4aa33",borderRadius:12,padding:18,marginBottom:16}}>
@@ -1266,42 +964,6 @@ export default function Dashboard() {
       )}
 
 
-      {/* FILTERS */}
-      {tab==="add" && (
-        <div>
-          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:20,marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{"\u2795"} Add New Event</div>
-            <p style={{fontSize:12,color:"#7a8499",marginBottom:16}}>End date auto-calculates as start + {EVENT_DURATION} days ({EVENT_DURATION+1} days inclusive).</p>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:16}}>
-              <div><label style={LS}>Event Name</label><input placeholder="e.g. Bristol Cocktail Week 2026" value={newEvtName} onChange={e=>setNewEvtName(e.target.value)} style={IS}/></div>
-              <div><label style={LS}>City</label><input placeholder="e.g. Bristol" value={newEvtCity} onChange={e=>setNewEvtCity(e.target.value)} style={IS}/></div>
-              <div><label style={LS}>Start Date</label><input type="date" value={newEvtDate} onChange={e=>setNewEvtDate(e.target.value)} style={IS}/></div>
-            </div>
-            {newEvtName&&newEvtDate && <div style={{fontSize:12,color:"#7a8499",marginBottom:12}}>End date: <strong style={{color:"#00d4aa"}}>{addDays(newEvtDate,EVENT_DURATION)}</strong></div>}
-            <button onClick={addCustomEvent} disabled={!newEvtName.trim()||!newEvtDate}
-              style={{padding:"10px 24px",borderRadius:10,border:"none",background:newEvtName.trim()&&newEvtDate?"#00d4aa":"#242a35",color:newEvtName.trim()&&newEvtDate?"#0b0d11":"#4d5568",fontFamily:"inherit",fontSize:13,fontWeight:600,cursor:newEvtName.trim()&&newEvtDate?"pointer":"not-allowed"}}>
-              Add Event
-            </button>
-          </div>
-          <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>{"\ud83d\udcc5"} All Events & Dates</div>
-          <Table columns={[
-            {key:"event",label:"Event"},{key:"start",label:"Start"},{key:"end",label:"End"},
-            {key:"firstSale",label:"First Sale"},
-            {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
-            {key:"daysToEnd",label:"Days to End",fmt:v=>v<0?Math.abs(v)+"d ago":v===0?"TODAY":v+"d"},
-            {key:"tickets",label:"Tickets",fmt:v=>fmt(v)},
-            {key:"status",label:"Status"},
-          ]} data={allEvents.filter(e=>startDates[e]).map(e => {
-            const sd=startDates[e]; const ed=addDays(sd,EVENT_DURATION);
-            const dte=daysBetween(today,ed); const dts=daysBetween(today,sd);
-            const tickets=DATA.filter(d=>d.event===e).reduce((s,d)=>s+d.tickets,0);
-            const fs=FIRST_SALE_DATES[e]||null;
-            const onSale=fs&&sd?Math.max(daysBetween(fs,sd),0):null;
-            let status="Upcoming"; if(dte<0)status="Completed"; else if(dts<=0&&dte>=0)status="Live Now"; else if(dts<=30)status="On Sale Soon";
-            return {event:e,start:sd,end:ed,firstSale:fs||"-",onSaleDays:onSale,daysToEnd:dte,tickets,status};
-          }).sort((a,b)=>b.daysToEnd-a.daysToEnd)} maxRows={100}/>
-        </div>
-      )}
 
       <div style={{textAlign:"center",fontSize:11,color:"#4d5568",marginTop:32,paddingBottom:12}}>
         Cocktail Week HQ \u2014 {fmt(DATA.length)} records \u00b7 {CITIES_LIST.length} cities \u00b7 {allEvents.length} events
