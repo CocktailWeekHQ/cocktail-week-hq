@@ -694,7 +694,7 @@ export default function Dashboard() {
                       <th key={h} onClick={()=>ck&&setStatSort(s=>({col:ck,dir:s.col===ck&&s.dir==="asc"?"desc":"asc"}))} style={{padding:"10px 12px",textAlign:"left",color:ck&&statSort.col===ck?"#00d4aa":"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap",cursor:ck?"pointer":"default",userSelect:"none"}}>
                         {h}{ck&&statSort.col===ck?(statSort.dir==="asc"?" ↑":" ↓"):""}
                       </th>
-                    );})}
+                    ))}
                   </tr></thead>
                   <tbody>{eventResults.map((r,i)=>(
                     <tr key={i} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
@@ -912,7 +912,7 @@ export default function Dashboard() {
                   const ck=colKeys[hi];
                   return (
                   <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>
-                ))}
+                  );})}
               </tr></thead>
               <tbody>{completedEventsList.length===0?(
                 <tr><td colSpan={11} style={{padding:28,textAlign:"center",color:"#4d5568"}}>No completed events found — check event start dates are set in the Event Tracker tab.</td></tr>
