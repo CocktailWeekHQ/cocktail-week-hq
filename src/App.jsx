@@ -485,34 +485,11 @@ export default function Dashboard() {
     {id:"cities",label:"By City",icon:"🏙️"},
     {id:"daily",label:"Daily",icon:"📅"},
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
-    {id:"stats",label:"Event Stats",icon:"📋"},
+    {id:"stats",label:"Completed Event Stats",icon:"📋"},
   ];
 
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px"}}>
-
-      {/* GLOBAL FILTER BAR — only on By Event and By City */}
-      {(tab==="events"||tab==="cities") && (
-        <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
-          <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2,marginRight:4}}>Filters</span>
-          {[
-            {label:"City",val:city,set:v=>{setCity(v);setEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
-            {label:"Year",val:year,set:setYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
-            {label:"Month",val:month,set:setMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
-            {label:"Event",val:event,set:setEvent,opts:[["All","All Events"],...cityEvents.map(e=>[e,e])]},
-          ].map(f=>(
-            <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
-              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
-              <select value={f.val} onChange={e=>f.set(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
-                {f.opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-          ))}
-          {(city!=="All"||year!=="All"||month!=="All"||event!=="All")&&(
-            <button onClick={()=>{setCity("All");setYear("All");setMonth("All");setEvent("All");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
-          )}
-        </div>
-      )}
 
       {/* TICKER */}
       {(()=>{
@@ -609,6 +586,191 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      {/* INSTANT VIEW */}
+      {tab==="instant" && (
+        <div>
+          {/* PERIOD SUMMARY BLOCKS */}
+          {(()=>{
+            const ps=periodSales;
+            const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
+            const periods=[
+              {label:"Yesterday",curr:ps.yesterday,prev:ps.dayBefore,ly:ps.lyYesterday,id:"yesterday"},
+              {label:"Last 7 Days",curr:ps.last7,prev:ps.prior7,ly:ps.lyLast7,id:"7day"},
+              {label:"Month to Date",curr:ps.mtd,prev:ps.lastMth,ly:ps.lyMtd,id:"mtd"},
+            ];
+            return (
+              <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+                {periods.map(p=>{
+                  const tDiff=pct(p.curr.tickets,p.prev.tickets);
+                  const rDiff=pct(p.curr.revenue,p.prev.revenue);
+                  const lyTDiff=pct(p.curr.tickets,p.ly.tickets);
+                  const lyRDiff=pct(p.curr.revenue,p.ly.revenue);
+                  const avg=p.curr.tickets>0?p.curr.revenue/p.curr.tickets:0;
+                  const prevAvg=p.prev.tickets>0?p.prev.revenue/p.prev.tickets:0;
+                  const avgDiff=pct(avg,prevAvg);
+                  return (
+                    <div key={p.id} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,flex:1,minWidth:240,cursor:"pointer"}} onClick={()=>setTickerModal(p.id)}>
+                      <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.4,marginBottom:12,fontWeight:700}}>{p.label}</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Tickets</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#e4e8f0"}}>{p.curr.tickets.toLocaleString()}</div>
+                          {tDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+tDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+tDiff>=0?"▲":"▼"}{Math.abs(+tDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+tDiff>=0?"+":""}{(p.curr.tickets-p.prev.tickets).toLocaleString()})</span></div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Revenue</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#22c55e"}}>{cur(p.curr.revenue)}</div>
+                          {rDiff!==null&&<div style={{fontSize:11,fontWeight:700,color:+rDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+rDiff>=0?"▲":"▼"}{Math.abs(+rDiff)}%<span style={{fontWeight:400,color:"#4d5568"}}> ({+rDiff>=0?"+":""}{cur(Math.round((p.curr.revenue-p.prev.revenue)*100)/100)})</span></div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Avg Price</div>
+                          <div style={{fontSize:18,fontWeight:700,color:"#f59e0b"}}>{avg>0?cur(avg):"—"}</div>
+                          {avgDiff!==null&&prevAvg>0&&<div style={{fontSize:11,fontWeight:700,color:+avgDiff>=0?"#22c55e":"#ef4444",marginTop:1}}>{+avgDiff>=0?"▲":"▼"}{Math.abs(+avgDiff)}%</div>}
+                        </div>
+                      </div>
+                      {(p.ly.tickets>0||p.ly.revenue>0)&&(
+                        <div style={{borderTop:"1px solid #1e222b",paddingTop:8,display:"flex",gap:14,flexWrap:"wrap"}}>
+                          <div>
+                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Tickets</div>
+                            <div style={{fontSize:12,fontWeight:600,color:lyTDiff!==null&&+lyTDiff>=0?"#22c55e":"#ef4444"}}>
+                              {p.ly.tickets.toLocaleString()} {lyTDiff!==null&&<span>({+lyTDiff>=0?"▲":"▼"}{Math.abs(+lyTDiff)}%)</span>}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:1}}>vs LY Revenue</div>
+                            <div style={{fontSize:12,fontWeight:600,color:lyRDiff!==null&&+lyRDiff>=0?"#22c55e":"#ef4444"}}>
+                              {cur(p.ly.revenue)} {lyRDiff!==null&&<span>({+lyRDiff>=0?"▲":"▼"}{Math.abs(+lyRDiff)}%)</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* CITY BREAKDOWN TOGGLE */}
+          <div style={{marginBottom:22}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700}}>📍 Breakdown by City</div>
+                <div style={{fontSize:11,color:"#4d5568",marginTop:2}}>Comparison vs same days-to-end point in previous event for each city</div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[["yesterday","Yesterday"],["7day","Last 7 Days"],["mtd","Month to Date"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setInstantPeriod(v)} style={{padding:"5px 12px",borderRadius:7,border:"1px solid "+(instantPeriod===v?"#00d4aa":"#242a35"),background:instantPeriod===v?"#00d4aa22":"transparent",color:instantPeriod===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:instantPeriod===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+                ))}
+              </div>
+            </div>
+            {instantViewData.length===0?(
+              <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"20px",textAlign:"center",color:"#4d5568",fontSize:13}}>No city sales for this period.</div>
+            ):(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
+                {instantViewData.map(c=>{
+                  const ahead=c.tDiff===null||c.tDiff>=0;
+                  const rAhead=c.rDiff===null||c.rDiff>=0;
+                  return (
+                    <div key={c.city} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:14,borderLeft:"3px solid "+c.color}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#e4e8f0"}}>{c.city}</div>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:c.color}}/>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Tickets</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.tickets.toLocaleString()}</div>
+                          {c.tDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:ahead?"#22c55e":"#ef4444"}}>{ahead?"▲":"▼"}{Math.abs(c.tDiff)}% ({ahead?"+":""}{(c.tickets-c.prevTickets).toLocaleString()})</div>}
+                        </div>
+                        <div>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Revenue</div>
+                          <div style={{fontSize:15,fontWeight:700,color:c.color}}>{cur(c.revenue)}</div>
+                          {c.rDiff!==null&&<div style={{fontSize:10,fontWeight:700,color:rAhead?"#22c55e":"#ef4444"}}>{rAhead?"▲":"▼"}{Math.abs(c.rDiff)}% ({rAhead?"+":""}{cur(Math.round((c.revenue-c.prevRevenue)*100)/100)})</div>}
+                        </div>
+                      </div>
+                      {c.avg>0&&<div style={{fontSize:10,color:"#f59e0b"}}>Avg: ~{cur(c.avg)}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* LIVE PACING VS PREVIOUS EVENT */}
+          {cityPacingComparison.length>0&&(
+            <div style={{marginBottom:22}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>🔴🟢 Live Pacing vs Previous Event</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+                {[...cityPacingComparison].sort((a,b)=>a.daysToEnd-b.daysToEnd).map((c,i)=>{
+                  const ahead=c.ticketDiff>=0; const rAhead=c.revDiff>=0;
+                  const diffCol=ahead?"#22c55e":"#ef4444";
+                  const pct=c.prevAtPoint>0?Math.round(Math.abs(c.ticketDiff)/c.prevAtPoint*100):0;
+                  return (
+                    <div key={i} style={{background:"#13161c",border:"1px solid "+(ahead?"#22c55e33":"#ef444433"),borderRadius:12,padding:16,borderTop:"2px solid "+diffCol}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700}}>{c.city}</div>
+                          <div style={{fontSize:11,color:"#7a8499",marginTop:2}}>{c.event}</div>
+                          <div style={{fontSize:11,color:"#4d5568",marginTop:1}}>{c.daysToEnd}d to end</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:18,fontWeight:700,color:diffCol}}>{ahead?"▲":"▼"} {Math.abs(c.ticketDiff).toLocaleString()}</div>
+                          <div style={{fontSize:10,color:diffCol}}>{ahead?"ahead":"behind"} tkts ({pct}%)</div>
+                          <div style={{fontSize:11,fontWeight:600,color:rAhead?"#22c55e":"#ef4444",marginTop:2}}>{rAhead?"▲":"▼"} £{Math.abs(c.revDiff).toLocaleString("en-GB",{minimumFractionDigits:0})} rev</div>
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Now</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{c.currTickets.toLocaleString()}</div>
+                          <div style={{fontSize:11,color:"#22c55e"}}>{"£"+c.currRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
+                        </div>
+                        <div style={{background:"#0b0d11",borderRadius:8,padding:"8px 10px"}}>
+                          <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Prev here</div>
+                          <div style={{fontSize:15,fontWeight:700,color:"#7a8499"}}>{c.prevAtPoint.toLocaleString()}</div>
+                          <div style={{fontSize:11,color:"#7a8499"}}>{"£"+c.prevRevAtPoint.toLocaleString("en-GB",{minimumFractionDigits:0})}</div>
+                        </div>
+                      </div>
+                      {c.forecastTickets&&(
+                        <div style={{background:"#6366f110",border:"1px solid #6366f130",borderRadius:8,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{fontSize:10,color:"#6366f1",fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Forecast</div>
+                          <div><span style={{fontSize:14,fontWeight:700,color:"#6366f1"}}>{c.forecastTickets.toLocaleString()} tickets</span><span style={{fontSize:11,color:"#6366f1",marginLeft:8}}>{"£"+c.forecastRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})}</span></div>
+                        </div>
+                      )}
+                      <div style={{fontSize:10,color:"#4d5568",marginTop:8}}>vs {c.prevEvent} (final: {c.prevTotal.toLocaleString()} tkts · £{c.prevTotalRevenue.toLocaleString("en-GB",{minimumFractionDigits:0})})</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* FILTER BAR — By Event and By City only, inside tab content */}
+      {(tab==="events"||tab==="cities")&&(
+        <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2}}>Filters</span>
+          {[
+            {label:"City",val:city,set:v=>{setCity(v);setEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
+            {label:"Year",val:year,set:setYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
+            {label:"Month",val:month,set:setMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
+            {label:"Event",val:event,set:setEvent,opts:[["All","All Events"],...cityEvents.map(e=>[e,e])]},
+          ].map(f=>(
+            <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
+              <select value={f.val} onChange={e=>f.set(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
+                {f.opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          ))}
+          {(city!=="All"||year!=="All"||month!=="All"||event!=="All")&&(
+            <button onClick={()=>{setCity("All");setYear("All");setMonth("All");setEvent("All");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+          )}
+        </div>
+      )}
 
       {/* BY EVENT */}
       {tab==="events" && (
