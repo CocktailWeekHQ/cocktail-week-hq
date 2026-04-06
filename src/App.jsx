@@ -386,6 +386,12 @@ export default function Dashboard() {
   const [tickerModal, setTickerModal] = useState(null); // "yesterday"|"7day"|"mtd"
   // Stats table sort
   const [statSort, setStatSort] = useState({col:"endDate",dir:"desc"});
+  const [statsCity, setStatsCity] = useState("All");
+  const [statsEvent, setStatsEvent] = useState("All");
+  const [statsYear, setStatsYear] = useState("All");
+  const [statsMonth, setStatsMonth] = useState("All");
+  const [statsFrom, setStatsFrom] = useState("");
+  const [statsTo, setStatsTo] = useState("");
 
   const allEventTotals = useMemo(() => {
     const map = {};
@@ -591,7 +597,7 @@ export default function Dashboard() {
         <div style={{width:44,height:44,borderRadius:12,background:"linear-gradient(135deg,#00d4aa22,#6366f122)",border:"1px solid #00d4aa33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{"\ud83c\udf78"}</div>
         <div>
           <h1 style={{fontSize:22,fontWeight:700,margin:0,fontFamily:"'Sora',sans-serif",letterSpacing:-0.5}}>Cocktail Week HQ</h1>
-          <p style={{fontSize:12,color:"#4d5568",margin:0}}>Sales Intelligence \u2014 {fmt(DATA.length)} records \u00b7 {allEvents.length} events \u00b7 Event = {EVENT_DURATION+1} days</p>
+
         </div>
       </div>
 
@@ -871,15 +877,52 @@ export default function Dashboard() {
           </div>
 
 
+          {/* EVENT STATS FILTERS */}
+          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"12px 14px",marginBottom:14,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+            <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2}}>Filter Stats</span>
+            {[
+              {label:"City",val:statsCity,set:v=>{setStatsCity(v);setStatsEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
+              {label:"Year",val:statsYear,set:setStatsYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
+              {label:"Month",val:statsMonth,set:setStatsMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
+              {label:"Event",val:statsEvent,set:setStatsEvent,opts:[["All","All Events"],...completedEventsList.filter(e=>statsCity==="All"||e.city===statsCity).map(e=>[e.event,e.event])]},
+            ].map(f=>(
+              <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
+                <select value={f.val} onChange={e=>f.set(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
+                  {f.opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            ))}
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>From</span>
+              <input type="date" value={statsFrom} onChange={e=>setStatsFrom(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>To</span>
+              <input type="date" value={statsTo} onChange={e=>setStatsTo(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
+            </div>
+            {(statsCity!=="All"||statsYear!=="All"||statsMonth!=="All"||statsEvent!=="All"||statsFrom||statsTo)&&(
+              <button onClick={()=>{setStatsCity("All");setStatsYear("All");setStatsMonth("All");setStatsEvent("All");setStatsFrom("");setStatsTo("");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+            )}
+          </div>
+
           {/* EVENT STATS KPI SUMMARY */}
           {(()=>{
-            const totT=completedEventsList.reduce((s,e)=>s+e.totalTickets,0);
-            const totFree=completedEventsList.reduce((s,e)=>s+(e.freeTickets||0),0);
-            const totPaid=completedEventsList.reduce((s,e)=>s+(e.paidTickets||0),0);
-            const totRev=completedEventsList.reduce((s,e)=>s+e.ticketRevenue,0);
-            const cities=new Set(completedEventsList.map(e=>e.city)).size;
-            // Avg daily paid tickets: total paid / total selling days across all completed events
-            const totalDays=completedEventsList.reduce((s,e)=>{
+            const filteredStats = completedEventsList.filter(e=>{
+              if(statsCity!=="All"&&e.city!==statsCity) return false;
+              if(statsEvent!=="All"&&e.event!==statsEvent) return false;
+              if(statsYear!=="All"&&!e.endDate.startsWith(statsYear)) return false;
+              if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0")) return false;
+              if(statsFrom&&e.endDate<statsFrom) return false;
+              if(statsTo&&e.endDate>statsTo) return false;
+              return true;
+            });
+            const totT=filteredStats.reduce((s,e)=>s+e.totalTickets,0);
+            const totFree=filteredStats.reduce((s,e)=>s+(e.freeTickets!==null?e.freeTickets:0),0);
+            const totPaid=totT-totFree;
+            const totRev=filteredStats.reduce((s,e)=>s+e.ticketRevenue,0);
+            const cities=new Set(filteredStats.map(e=>e.city)).size;
+            const totalDays=filteredStats.reduce((s,e)=>{
               const evtRows=DATA.filter(d=>d.event===e.event);
               return s+(evtRows.length||0);
             },0);
@@ -888,7 +931,7 @@ export default function Dashboard() {
             const avgPrice=totPaid>0?totRev/totPaid:0;
             return (
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:20}}>
-                <KPI label="Total Tickets" value={fmt(totT)} color="#00d4aa" sub={completedEventsList.length+" events"}/>
+                <KPI label="Total Tickets" value={fmt(totT)} color="#00d4aa" sub={filteredStats.length+" events"}/>
                 <KPI label="Free Tickets" value={fmt(totFree)} color="#7a8499"/>
                 <KPI label="Paid Tickets" value={fmt(totPaid)} color="#6366f1"/>
                 <KPI label="Total Revenue" value={cur(Math.round(totRev*100)/100)} color="#22c55e"/>
@@ -899,6 +942,7 @@ export default function Dashboard() {
               </div>
             );
           })()}
+
 
           {/* INLINE EDIT FORM */}
           {editingStatEvt && (
@@ -933,9 +977,20 @@ export default function Dashboard() {
                   <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>
                   );})}
               </tr></thead>
-              <tbody>{completedEventsList.length===0?(
-                <tr><td colSpan={11} style={{padding:28,textAlign:"center",color:"#4d5568"}}>No completed events found — check event start dates are set in the Event Tracker tab.</td></tr>
-              ):sortedStatsList.map((e,i)=>(
+              {(()=>{
+                const filteredStats=sortedStatsList.filter(e=>{
+                  if(statsCity!=="All"&&e.city!==statsCity) return false;
+                  if(statsEvent!=="All"&&e.event!==statsEvent) return false;
+                  if(statsYear!=="All"&&!e.endDate.startsWith(statsYear)) return false;
+                  if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0")) return false;
+                  if(statsFrom&&e.endDate<statsFrom) return false;
+                  if(statsTo&&e.endDate>statsTo) return false;
+                  return true;
+                });
+                return (
+              <tbody>{filteredStats.length===0?(
+                <tr><td colSpan={13} style={{padding:28,textAlign:"center",color:"#4d5568"}}>No events match current filters.</td></tr>
+              ):filteredStats.map((e,i)=>(
                 <tr key={i} onMouseEnter={el=>el.currentTarget.style.background="#1a1e26"} onMouseLeave={el=>el.currentTarget.style.background=""}>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{e.event}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{e.city}</td>
@@ -958,6 +1013,8 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ))}</tbody>
+                );
+              })()}
             </table>
           </div>
         </div>
@@ -966,7 +1023,7 @@ export default function Dashboard() {
 
 
       <div style={{textAlign:"center",fontSize:11,color:"#4d5568",marginTop:32,paddingBottom:12}}>
-        Cocktail Week HQ \u2014 {fmt(DATA.length)} records \u00b7 {CITIES_LIST.length} cities \u00b7 {allEvents.length} events
+        Created by McG
       </div>
     </div>
   );
