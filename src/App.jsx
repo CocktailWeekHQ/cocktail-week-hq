@@ -494,11 +494,11 @@ export default function Dashboard() {
 
   const tabs = [
     {id:"instant",label:"Instant View",icon:"⚡"},
+    {id:"daily",label:"Daily",icon:"📅"},
     {id:"events",label:"By Event",icon:"🎉"},
     {id:"cities",label:"By City",icon:"🏙️"},
-    {id:"daily",label:"Daily",icon:"📅"},
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
-    {id:"stats",label:"Completed Event Stats",icon:"📋"},
+    {id:"stats",label:"Event Stats",icon:"📋"},
   ];
 
   return (
@@ -788,57 +788,66 @@ export default function Dashboard() {
       {/* BY EVENT */}
       {tab==="events" && (
         <div>
-          {/* Upcoming events — next 6, only shown when no filters active */}
-          {city==="All"&&year==="All"&&month==="All"&&event==="All"&&(()=>{
-            const upcoming=allEvents.filter(e=>{
-              const sd=startDates[e]; if(!sd) return false;
-              return sd>today;
-            }).sort((a,b)=>startDates[a].localeCompare(startDates[b])).slice(0,6);
-            if(upcoming.length===0) return null;
-            return (
-              <div style={{marginBottom:18}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#00d4aa",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⚡ Next Upcoming Events</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:10}}>
-                  {upcoming.map((evt,i)=>{
-                    const sd=startDates[evt];
-                    const ed=addDays(sd,EVENT_DURATION);
-                    const dts=daysBetween(today,sd);
-                    const sales=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
-                    const rev=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.revenue,0);
-                    const city=DATA.find(d=>d.event===evt)?.city||CITIES_LIST.find(c=>evt.includes(c))||"";
-                    return (
-                      <div key={evt} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:14,borderTop:"2px solid "+COLORS[i%COLORS.length]}}>
-                        <div style={{fontSize:12,fontWeight:700,color:"#e4e8f0",marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{evt}</div>
-                        <div style={{fontSize:11,color:"#7a8499",marginBottom:6}}>{city} · Starts {sd}</div>
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                          <div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Days to Start</div><div style={{fontSize:14,fontWeight:700,color:COLORS[i%COLORS.length]}}>{dts}d</div></div>
-                          <div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Tickets Sold</div><div style={{fontSize:14,fontWeight:700,color:"#e4e8f0"}}>{sales.toLocaleString()}</div></div>
-                          {rev>0&&<div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Revenue</div><div style={{fontSize:14,fontWeight:700,color:"#22c55e"}}>{cur(rev)}</div></div>}
-                        </div>
-                      </div>
-                    );
-                  })}
+          {city==="All"&&year==="All"&&month==="All"&&event==="All" ? (
+            // Default: show next 5 upcoming events only
+            (()=>{
+              const upcoming=allEvents.filter(e=>{
+                const sd=startDates[e]; if(!sd) return false;
+                return sd>today;
+              }).sort((a,b)=>startDates[a].localeCompare(startDates[b])).slice(0,5);
+              return (
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#00d4aa",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⚡ Next 5 Upcoming Events</div>
+                  {upcoming.length===0?(
+                    <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"28px 20px",textAlign:"center",color:"#4d5568"}}>No upcoming events found — check start dates in Event Tracker.</div>
+                  ):(
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                      {upcoming.map((evt,i)=>{
+                        const sd=startDates[evt];
+                        const dts=daysBetween(today,sd);
+                        const sales=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
+                        const rev=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.revenue,0);
+                        const evtCity=DATA.find(d=>d.event===evt)?.city||CITIES_LIST.find(c=>evt.includes(c))||"";
+                        return (
+                          <div key={evt} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,borderTop:"2px solid "+COLORS[i%COLORS.length]}}>
+                            <div style={{fontSize:13,fontWeight:700,color:"#e4e8f0",marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{evt}</div>
+                            <div style={{fontSize:11,color:"#7a8499",marginBottom:10}}>{evtCity} · Starts {sd}</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                              <div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Days Away</div><div style={{fontSize:16,fontWeight:700,color:COLORS[i%COLORS.length]}}>{dts}d</div></div>
+                              <div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Tickets</div><div style={{fontSize:16,fontWeight:700,color:"#e4e8f0"}}>{sales.toLocaleString()}</div></div>
+                              <div><div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginBottom:2}}>Revenue</div><div style={{fontSize:16,fontWeight:700,color:"#22c55e"}}>{rev>0?cur(rev):"—"}</div></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div style={{marginTop:14,fontSize:11,color:"#4d5568",textAlign:"center"}}>Use the filters above to view historical event data</div>
                 </div>
+              );
+            })()
+          ) : (
+            // Filtered: show full KPI cards + table
+            <div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:18}}>
+                {[...eventSummary].sort((a,b)=>b.revenue-a.revenue).slice(0,8).map((e,i)=>(
+                  <KPI key={e.event} label={e.event.replace(/ Cocktail Week /,' CW ')} value={cur(e.revenue)} color={COLORS[i%COLORS.length]} sub={fmt(e.paidTickets)+" paid · "+e.city}/>
+                ))}
               </div>
-            );
-          })()}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:18}}>
-            {[...eventSummary].sort((a,b)=>b.revenue-a.revenue).slice(0,8).map((e,i)=>(
-              <KPI key={e.event} label={e.event.replace(/ Cocktail Week /,' CW ')} value={cur(e.revenue)} color={COLORS[i%COLORS.length]} sub={fmt(e.paidTickets)+" paid · "+e.city}/>
-            ))}
-          </div>
-          <Table columns={[
-            {key:"event",label:"Event"},{key:"city",label:"City"},
-            {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
-            {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
-            {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
-            {key:"freeTickets",label:"Free Tickets",fmt:v=>fmt(v)},
-            {key:"paidTickets",label:"Paid Tickets",fmt:v=>fmt(v)},
-            {key:"revenue",label:"Revenue",fmt:v=>cur(v)},
-            {key:"avgPrice",label:"Avg Price (Paid)",fmt:v=>cur(v)},
-            {key:"avgDaily",label:"Paid/Day"},
-            {key:"avgDailyRev",label:"Rev/Day",fmt:v=>cur(v)},{key:"days",label:"Selling Days"},
-          ]} data={eventSummary} maxRows={100}/>
+              <Table columns={[
+                {key:"event",label:"Event"},{key:"city",label:"City"},
+                {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
+                {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
+                {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
+                {key:"freeTickets",label:"Free Tickets",fmt:v=>fmt(v)},
+                {key:"paidTickets",label:"Paid Tickets",fmt:v=>fmt(v)},
+                {key:"revenue",label:"Revenue",fmt:v=>cur(v)},
+                {key:"avgPrice",label:"Avg Price (Paid)",fmt:v=>cur(v)},
+                {key:"avgDaily",label:"Paid/Day"},
+                {key:"avgDailyRev",label:"Rev/Day",fmt:v=>cur(v)},{key:"days",label:"Selling Days"},
+              ]} data={eventSummary} maxRows={100}/>
+            </div>
+          )}
         </div>
       )}
 
@@ -930,23 +939,26 @@ export default function Dashboard() {
                 if(!map[k]) map[k]={date:d.date,city:dailyTop10City==="All"?"All":d.city,tickets:0,revenue:0,evtSet:new Set()};
                 map[k].tickets+=d.tickets; map[k].revenue+=d.revenue; map[k].evtSet.add(d.event);
               });
-              const rows=Object.values(map).map(r=>({...r,revenue:Math.round(r.revenue*100)/100,events:r.evtSet.size})).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+              const byEvt=dailyMode==="byevent";
+              const rows=Object.values(map).map(r=>({...r,revenue:Math.round(r.revenue*100)/100,events:r.evtSet.size,topEvt:[...r.evtSet][0]||""})).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+              const cols=byEvt?["#","Date","Event","City","Revenue","Tickets"]:["#","Date","City","Total Revenue","Tickets","Events"];
               return (
                 <div>
                   <div style={{fontSize:12,fontWeight:700,color:"#f59e0b",marginBottom:10}}>🏆 Top 10 Sales Dates by Revenue{dailyTop10City!=="All"?" — "+dailyTop10City:""}</div>
                   <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                       <thead><tr style={{background:"#1a1e26"}}>
-                        {["#","Date","City","Total Revenue","Tickets","Events"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}
+                        {cols.map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}
                       </tr></thead>
                       <tbody>{rows.map((r,i)=>(
                         <tr key={i} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
                           <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:700}}>{i+1}</td>
                           <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.date}</td>
+                          {byEvt&&<td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.topEvt}</td>}
                           <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499"}}>{r.city}</td>
                           <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{cur(r.revenue)}</td>
                           <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums"}}>{r.tickets.toLocaleString()}</td>
-                          <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499"}}>{r.events}</td>
+                          {!byEvt&&<td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499"}}>{r.events}</td>}
                         </tr>
                       ))}</tbody>
                     </table>
@@ -1134,7 +1146,7 @@ export default function Dashboard() {
               {label:"City",val:statsCity,set:v=>{setStatsCity(v);setStatsEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
               {label:"Year",val:statsYear,set:setStatsYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
               {label:"Month",val:statsMonth,set:setStatsMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
-              {label:"Event",val:statsEvent,set:setStatsEvent,opts:[["All","All Events"],...completedEventsList.filter(e=>statsCity==="All"||e.city===statsCity).map(e=>[e.event,e.event])]},
+              {label:"Event",val:statsEvent,set:setStatsEvent,opts:[["All","All Events"],...(statsCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===statsCity))).map(e=>[e,e])]},
             ].map(f=>(
               <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
                 <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
