@@ -855,14 +855,28 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{display:"flex",gap:2,marginBottom:20,background:"#13161c",borderRadius:12,padding:4,border:"1px solid #242a35",overflowX:"auto"}}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:9,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>
+      {/* Tabs — 3 rows */}
+      {(()=>{
+        const tabGroups = [
+          [{id:"instant",label:"Instant View",icon:"⚡"},{id:"daily",label:"Daily",icon:"📅"}],
+          [{id:"events",label:"By Event",icon:"🎉"},{id:"cities",label:"By City",icon:"🏙️"}],
+          [{id:"tracker",label:"Event Tracker",icon:"⏱️"},{id:"stats",label:"Event Stats",icon:"📋"},{id:"forecast",label:"Forecast",icon:"🔮"}],
+        ];
+        const btn = t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>
             {t.icon} {t.label}
           </button>
-        ))}
-      </div>
+        );
+        return (
+          <div style={{marginBottom:20,background:"#13161c",borderRadius:12,padding:4,border:"1px solid #242a35",display:"flex",flexDirection:"column",gap:2}}>
+            {tabGroups.map((group,gi)=>(
+              <div key={gi} style={{display:"flex",gap:2}}>
+                {group.map(t=>btn(t))}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* INSTANT VIEW */}
       {tab==="instant" && (
