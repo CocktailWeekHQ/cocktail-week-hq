@@ -322,9 +322,9 @@ export default function Dashboard() {
             MILESTONES.filter(m=>m<latestDTE).forEach(m=>{
               const prevAtM=getPrev(m);
               if(prevAtM){
-                const fPaid=Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid));
-                const fRev=Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100;
-                forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
+                const fPaid=prevAtCurr.paid>0?Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)):0;
+                const fRev=prevAtCurr.rev>0?Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100:0;
+                if(Number.isFinite(fPaid)&&Number.isFinite(fRev)) forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
               }
             });
           }
@@ -388,7 +388,9 @@ export default function Dashboard() {
           const prevAtM=getPrev(m);
           const currPaid=byDTE[latestDTE]?.paid||0; const currRev=byDTE[latestDTE]?.rev||0;
           if(prevAtM&&m<latestDTE){
-            milestones[m]={paid:Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)),rev:Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100,forecast:true,actual:false};
+            const fp=prevAtCurr.paid>0?Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)):0;
+            const fr=prevAtCurr.rev>0?Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100:0;
+            if(Number.isFinite(fp)&&Number.isFinite(fr)) milestones[m]={paid:fp,rev:fr,forecast:true,actual:false};
           }
         }
       });
@@ -1361,7 +1363,7 @@ export default function Dashboard() {
                 const DTE_MAX=95,DTE_MIN=-5;
                 const xScale=dte=>PL+(DTE_MAX-dte)/(DTE_MAX-DTE_MIN)*(W-PL-PR);
                 const yScale=v=>H-PB-(v/maxVal)*(H-PB-PT);
-                const mkPath=pts=>pts.length<2?"":pts.map((p,i)=>`${i===0?"M":"L"}${xScale(p.dte).toFixed(1)},${yScale(p[key]).toFixed(1)}`).join(" ");
+                const mkPath=pts=>pts.length<2?"":pts.filter(p=>Number.isFinite(p[key])&&Number.isFinite(p.dte)).map((p,i)=>`${i===0?"M":"L"}${xScale(p.dte).toFixed(1)},${yScale(p[key]).toFixed(1)}`).join(" ");
                 const GRID_DTES=[90,60,45,30,14,7,0];
                 const yTicks=5;
                 return (
