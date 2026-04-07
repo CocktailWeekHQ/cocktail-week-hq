@@ -1995,24 +1995,27 @@ export default function Dashboard() {
                           <div>
                             <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Milestone Predictions</div>
                             <div style={{overflowX:"auto",borderRadius:10,border:"1px solid #242a35",background:"#0b0d11"}}>
-                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                                 <thead><tr style={{background:"#13161c"}}>
-                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Milestone</th>
-                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Forecast Tickets</th>
-                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Forecast Revenue</th>
-                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Additional from Now</th>
-                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Status</th>
+                                  {["Milestone","Currently Sold","Current Revenue","+ Forecast Tickets","+ Forecast Revenue","= Total Tickets","= Total Revenue","Status"].map(h=>(
+                                    <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:9,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>
+                                  ))}
                                 </tr></thead>
                                 <tbody>{MILESTONES.map(m=>{
                                   const d=f.milestones[m];
                                   const isPast=m>=f.dte;
+                                  const addTkts=d?d.paid-f.paidSoFar:null;
+                                  const addRev=d&&d.rev?Math.round((d.rev-f.revSoFar)*100)/100:null;
                                   return (
-                                    <tr key={m} style={{opacity:isPast?0.4:1}} onMouseEnter={e=>e.currentTarget.style.background="#13161c"} onMouseLeave={e=>e.currentTarget.style.background=""}>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap"}}>{m===EVENT_DURATION?"Event Start ("+m+"d)":m+"d to end"}</td>
+                                    <tr key={m} style={{opacity:isPast?0.35:1}} onMouseEnter={e=>e.currentTarget.style.background="#13161c"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:700,whiteSpace:"nowrap"}}>{m===EVENT_DURATION?"Event Start":m+"d to end"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums"}}>{f.paidSoFar.toLocaleString()}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{cur(f.revSoFar)}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{addTkts!==null&&addTkts>0?"+"+addTkts.toLocaleString():d?"—":"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums"}}>{addRev!==null&&addRev>0?"+"+cur(addRev):d?"—":"—"}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#6366f1",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{d?d.paid.toLocaleString():"—"}</td>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{d&&d.rev?cur(d.rev):"—"}</td>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums"}}>{d&&d.paid>f.paidSoFar?"+"+(d.paid-f.paidSoFar).toLocaleString():d?"No change":"—"}</td>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",fontSize:10}}>{isPast?<span style={{color:"#4d5568"}}>Already passed</span>:<span style={{color:"#00d4aa"}}>Upcoming</span>}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#6366f1",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{d&&d.rev?cur(d.rev):"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",fontSize:10,whiteSpace:"nowrap"}}>{isPast?<span style={{color:"#4d5568"}}>Passed</span>:<span style={{color:"#00d4aa"}}>Upcoming</span>}</td>
                                     </tr>
                                   );
                                 })}</tbody>
