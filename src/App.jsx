@@ -235,7 +235,7 @@ export default function Dashboard() {
       const paid = e.tickets - free;
       const rev = Math.round(e.revenue*100)/100;
       return {...e, revenue:rev,
-        freeTickets:free, paidTickets:paid,
+        freeTickets:free, paidTickets:paid, venues,
         avgPrice:paid>0 ? Math.round(rev/paid*100)/100 : 0,
         avgDaily:e.days>0 ? Math.round(paid/e.days*10)/10 : 0,
         avgDailyRev:e.days>0 ? Math.round(rev/e.days*100)/100 : 0,
@@ -1050,8 +1050,8 @@ export default function Dashboard() {
                       <tbody>{rows.map((r,i)=>{
                           const isExpanded=expandedDateRow===r.date+(r.city!=="All"?r.city:"");
                           const dayBreakdown=DATA.filter(d=>d.date===r.date&&(dailyTop10City==="All"||d.city===dailyTop10City)).sort((a,b)=>b.revenue-a.revenue);
-                          return (<>
-                            <tr key={i} onClick={()=>setExpandedDateRow(isExpanded?null:r.date+(r.city!=="All"?r.city:""))} style={{cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=isExpanded?"#1a1e26":""}>
+                          return (<React.Fragment key={i}>
+                            <tr onClick={()=>setExpandedDateRow(isExpanded?null:r.date+(r.city!=="All"?r.city:""))} style={{cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=isExpanded?"#1a1e26":""}>
                               <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:700}}>{i+1}</td>
                               <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{r.date} {isExpanded?"▲":"▼"}</td>
                               {byEvt&&<td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.topEvt}</td>}
@@ -1060,7 +1060,7 @@ export default function Dashboard() {
                               <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums"}}>{r.tickets.toLocaleString()}</td>
                               {!byEvt&&<td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499"}}>{r.events}</td>}
                             </tr>
-                            {isExpanded&&(<tr key={i+"exp"}><td colSpan={byEvt?6:6} style={{padding:0,borderBottom:"1px solid #1e222b",background:"#0b0d11"}}>
+                            {isExpanded&&(<tr><td colSpan={byEvt?6:6} style={{padding:0,borderBottom:"1px solid #1e222b",background:"#0b0d11"}}>
                               <div style={{padding:"10px 14px"}}>
                                 <div style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Event breakdown for {r.date}</div>
                                 <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -1073,7 +1073,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             </td></tr>)}
-                          </>);
+                          </React.Fragment>);
                         })}</tbody>
                     </table>
                   </div>
