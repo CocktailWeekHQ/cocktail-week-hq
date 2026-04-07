@@ -150,6 +150,7 @@ export default function Dashboard() {
   const [startDates, setStartDates] = useState(EVENT_START_DATES);
   const [compareEvents, setCompareEvents] = useState([]);
   const [pacingMode, setPacingMode] = useState("tickets"); // "tickets" | "revenue"
+  const [expandedForecast, setExpandedForecast] = useState({}); // {eventName: bool}
   const [searchEvt, setSearchEvt] = useState("");
   const [customEvents, setCustomEvents] = useState([]);
   const [newEvtName, setNewEvtName] = useState("");
@@ -279,14 +280,13 @@ export default function Dashboard() {
       const stats = eventStats[evt]||{};
       const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
       const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
-      // Distribute free tickets proportionally across days
+      // Daily sales = paid sales. Adjust only the FINAL total for free tickets.
       let cumT=0,cumR=0;
       const byDTE={};
       evtData.forEach(d=>{
         cumT+=d.tickets; cumR+=d.revenue;
         const dte=daysBetween(d.date,endDate);
-        const freeSoFar=totalTickets>0?Math.round(freeTotal*cumT/totalTickets):0;
-        byDTE[dte]={paid:cumT-freeSoFar,rev:Math.round(cumR*100)/100};
+        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
       });
       const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
       const latestDTE=dtes[0]??null;
@@ -344,18 +344,18 @@ export default function Dashboard() {
       const stats = eventStats[evt]||{};
       const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
       const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
+      // Daily sales = paid. Only subtract free from final totals.
       let cumT=0,cumR=0; const byDTE={};
       evtData.forEach(d=>{
         cumT+=d.tickets;cumR+=d.revenue;
         const dte=daysBetween(d.date,endDate);
-        const freeSoFar=totalTickets>0?Math.round(freeTotal*cumT/totalTickets):0;
-        byDTE[dte]={paid:cumT-freeSoFar,rev:Math.round(cumR*100)/100};
+        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
       });
       const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
       const latestDTE=dtes[0]??null;
       const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
       const getAt=(target)=>{let cl=null;Object.keys(byDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?{...byDTE[cl],actual:true}:null;};
-      const paidTotal=totalTickets-freeTotal; const revTotal=Math.round(cumR*100)/100;
+      const paidTotal=Math.max(0,totalTickets-freeTotal); const revTotal=Math.round(cumR*100)/100;
       // Forecast for future milestones
       const milestones={};
       const evtCity=evtData[0]?.city||"";
@@ -603,6 +603,158 @@ export default function Dashboard() {
   const IS = {padding:"8px 12px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:8,color:"#e4e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:"100%"};
   const LS = {display:"block",fontSize:10,fontWeight:600,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4};
 
+
+  // ── FORECAST ENGINE ──────────────────────────────────────────────
+  const forecastData = useMemo(() => {
+    const MILESTONES = [90, 60, 45, 30, 14, 7, EVENT_DURATION, 0];
+
+    // Build a pacing curve from a set of completed events
+    // Returns {curve: {dte -> avgPct}, std: {dte -> stdPct}, n, finals: []}
+    const buildCurve = (evtList) => {
+      const curves = [];
+      const finals = [];
+      evtList.forEach(evt => {
+        const sd = startDates[evt.event]; if (!sd) return;
+        const ed = addDays(sd, EVENT_DURATION);
+        const rows = DATA.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
+        if (rows.length === 0) return;
+        const s = eventStats[evt.event] || {};
+        const freeTotal = s.freeTickets !== "" && s.freeTickets !== undefined ? +s.freeTickets : 0;
+        const rawTotal = rows.reduce((sum,d) => sum + d.tickets, 0);
+        const paidFinal = Math.max(1, rawTotal - freeTotal);
+        const revFinal = rows.reduce((sum,d) => sum + d.revenue, 0);
+        finals.push({paid: paidFinal, rev: revFinal});
+        let cum = 0, cumR = 0;
+        const byDTE = {};
+        rows.forEach(d => {
+          cum += d.tickets; cumR += d.revenue;
+          const dte = daysBetween(d.date, ed);
+        // Daily sales are all paid — no freeSoFar adjustment on cumulative
+        byDTE[Math.max(0,dte)] = {paidPct: cum / paidFinal, revPct: cumR / revFinal};
+        });
+        curves.push(byDTE);
+      });
+      if (curves.length === 0) return {curve:{}, std:{}, n:0, finals:[]};
+      // Average across all DTE points 0..120
+      const curve = {}, std = {};
+      for (let dte = 0; dte <= 120; dte++) {
+        const vals = curves.map(c => {
+          let best = null, bestD = 4;
+          Object.keys(c).forEach(k => { const d = Math.abs(parseInt(k)-dte); if(d<bestD){bestD=d;best=c[k];} });
+          return best;
+        }).filter(Boolean);
+        if (vals.length >= 2) {
+          const avgP = vals.reduce((s,v)=>s+v.paidPct,0)/vals.length;
+          const avgR = vals.reduce((s,v)=>s+v.revPct,0)/vals.length;
+          const stdP = Math.sqrt(vals.reduce((s,v)=>s+(v.paidPct-avgP)**2,0)/vals.length);
+          const stdR = Math.sqrt(vals.reduce((s,v)=>s+(v.revPct-avgR)**2,0)/vals.length);
+          curve[dte] = {paidPct: avgP, revPct: avgR};
+          std[dte] = {paidStd: stdP, revStd: stdR};
+        }
+      }
+      return {curve, std, n: curves.length, finals};
+    };
+
+    const globalCurve = buildCurve(completedEventsList);
+
+    // For each upcoming/active event, generate forecast
+    const results = [];
+    allEvents.forEach(evt => {
+      const sd = startDates[evt]; if (!sd) return;
+      const ed = addDays(sd, EVENT_DURATION);
+      const dte = daysBetween(today, ed);
+      if (dte < 0) return; // completed — skip
+      const rows = DATA.filter(d => d.event === evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const s = eventStats[evt] || {};
+      // Daily ticket sales = paid tickets. Free tickets are bulk allocations, not in daily sales data.
+      const rawSoFar = rows.reduce((sum,d) => sum + d.tickets, 0);
+      const revSoFar = rows.reduce((sum,d) => sum + d.revenue, 0);
+      const paidSoFar = rawSoFar; // all daily sales are paid — no free ticket adjustment needed
+      const curPct = globalCurve.curve[dte]?.paidPct || null;
+      const curRevPct = globalCurve.curve[dte]?.revPct || null;
+
+      // City curve
+      const evtCity = rows[0]?.city || CITIES_LIST.find(c => evt.includes(c)) || "";
+      const cityEvents = completedEventsList.filter(e => e.city === evtCity);
+      const cityCurve = cityEvents.length >= 2 ? buildCurve(cityEvents) : null;
+      const cityCurPct = cityCurve?.curve[dte]?.paidPct || null;
+      const cityCurRevPct = cityCurve?.curve[dte]?.revPct || null;
+
+      // Recent trajectory (last 14 days of sales → daily rate)
+      const recentRows = rows.filter(d => daysBetween(d.date, today) <= 14);
+      const recentPaid = recentRows.reduce((s,d) => s + d.tickets, 0);
+      const dailyRate = recentRows.length > 0 ? recentPaid / Math.max(recentRows.length, 1) : 0;
+      const trajForecast = paidSoFar + dailyRate * Math.max(0, dte);
+
+      // Weights: more own data = more weight on trajectory
+      const dataRichness = Math.min(1, rows.length / 30); // 0..1
+      const hasCityData = cityCurve && cityCurve.n >= 2;
+      const wGlobal = hasCityData ? 0.25 : 0.4;
+      const wCity = hasCityData ? 0.35 : 0;
+      const wTraj = 0.35 * dataRichness;
+      const wCurveOnly = 1 - wTraj;
+
+      // Forecasts from each signal
+      const globalForecast = curPct && curPct > 0.01 ? paidSoFar / curPct : null;
+      const cityForecast = cityCurPct && cityCurPct > 0.01 ? paidSoFar / cityCurPct : null;
+      const globalRevForecast = curRevPct && curRevPct > 0.01 ? revSoFar / curRevPct : null;
+      const cityRevForecast = cityCurRevPct && cityCurRevPct > 0.01 ? revSoFar / cityCurRevPct : null;
+
+      // Combined forecast
+      let combinedPaid = null, combinedRev = null;
+      if (globalForecast !== null) {
+        const gW = hasCityData ? wGlobal : (wGlobal + wCity);
+        const cW = hasCityData && cityForecast !== null ? wCity : 0;
+        const tW = wTraj;
+        const total = gW + cW + tW;
+        combinedPaid = (globalForecast * gW + (cityForecast||globalForecast) * cW + trajForecast * tW) / total;
+        combinedRev = globalRevForecast !== null ?
+          (globalRevForecast * gW + (cityRevForecast||globalRevForecast) * cW + (revSoFar + dailyRate * dte * (revSoFar/Math.max(paidSoFar,1))) * tW) / total : null;
+      }
+
+      // Confidence range from std dev
+      const stdAt = globalCurve.std[dte];
+      const lowMultiplier = stdAt ? Math.max(0.7, 1 - stdAt.paidStd * 2) : 0.85;
+      const highMultiplier = stdAt ? Math.min(1.5, 1 + stdAt.paidStd * 2) : 1.15;
+
+      // Milestone forecasts
+      const milestones = {};
+      MILESTONES.forEach(m => {
+        if (m >= dte) return; // already past or now
+        const gPct = globalCurve.curve[m]?.paidPct;
+        const cPct = cityCurve?.curve[m]?.paidPct;
+        if (!combinedPaid || !gPct) return;
+        const mPaid = Math.round(combinedPaid * gPct);
+        const mRev = combinedRev && globalCurve.curve[m]?.revPct ? Math.round(combinedRev * globalCurve.curve[m].revPct * 100)/100 : null;
+        milestones[m] = {paid: mPaid, rev: mRev};
+      });
+
+      // Dominant signal
+      let dominantSignal = "Global average";
+      if (dataRichness > 0.5 && wTraj > wGlobal) dominantSignal = "Current pace";
+      else if (hasCityData && wCity >= wGlobal) dominantSignal = evtCity+" history";
+
+      results.push({
+        event: evt, city: evtCity, sd, ed, dte,
+        daysToStart: daysBetween(today, sd),
+        paidSoFar, revSoFar, rawSoFar,
+        globalForecast: globalForecast ? Math.round(globalForecast) : null,
+        cityForecast: cityForecast ? Math.round(cityForecast) : null,
+        trajForecast: Math.round(trajForecast),
+        combinedPaid: combinedPaid ? Math.round(combinedPaid) : null,
+        combinedRev: combinedRev ? Math.round(combinedRev * 100)/100 : null,
+        lowPaid: combinedPaid ? Math.round(combinedPaid * lowMultiplier) : null,
+        highPaid: combinedPaid ? Math.round(combinedPaid * highMultiplier) : null,
+        milestones, dominantSignal,
+        cityN: cityCurve?.n || 0, globalN: globalCurve.n,
+        dailyRate: Math.round(dailyRate * 10)/10,
+      });
+    });
+
+    return results.sort((a,b) => a.dte - b.dte); // soonest first
+  }, [allEvents, startDates, completedEventsList, eventStats, today]);
+  // ── END FORECAST ENGINE ──────────────────────────────────────────
+
   const tabs = [
     {id:"instant",label:"Instant View",icon:"⚡"},
     {id:"daily",label:"Daily",icon:"📅"},
@@ -610,6 +762,7 @@ export default function Dashboard() {
     {id:"cities",label:"By City",icon:"🏙️"},
     {id:"tracker",label:"Event Tracker",icon:"⏱️"},
     {id:"stats",label:"Event Stats",icon:"📋"},
+    {id:"forecast",label:"Forecast",icon:"🔮"},
   ];
 
   return (
@@ -1330,13 +1483,25 @@ export default function Dashboard() {
                     {validSeries.map((s,i)=>{
                       const pts=[...s.points].sort((a,b)=>b.dte-a.dte);
                       const fpts=[...s.forecastPoints].sort((a,b)=>b.dte-a.dte);
-                      // Connect actual to forecast
-                      const joinPt=pts.length?pts[pts.length-1]:null;
-                      const fullFcast=joinPt&&fpts.length?[{dte:joinPt.dte,paid:joinPt.paid,rev:joinPt.rev},...fpts]:fpts;
+                      // Build smooth forecast line: start from last actual point, go through milestones to 0
+                      const lastActual=pts.length?pts[pts.length-1]:null;
+                      // If active event, add a point at dte=0 using final forecast from forecastData
+                      const fData=forecastData.find(fd=>fd.event===s.label);
+                      const finalForecast=fData?.combinedPaid;
+                      const finalRevForecast=fData?.combinedRev;
+                      let enrichedFcast=[...fpts];
+                      if(s.isActive&&finalForecast&&!enrichedFcast.find(p=>p.dte===0)){
+                        enrichedFcast.push({dte:0,paid:finalForecast,rev:finalRevForecast||0});
+                      }
+                      enrichedFcast.sort((a,b)=>b.dte-a.dte);
+                      const fullFcast=lastActual&&enrichedFcast.length?
+                        [{dte:lastActual.dte,paid:lastActual.paid,rev:lastActual.rev},...enrichedFcast]:
+                        enrichedFcast;
                       return (<g key={i}>
                         <path d={mkPath(pts)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round"/>
-                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke={s.color} strokeWidth="2" strokeDasharray="6,4" opacity="0.7" strokeLinejoin="round"/>}
+                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke={s.color} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.65" strokeLinejoin="round"/>}
                         {pts[0]&&<circle cx={xScale(pts[0].dte)} cy={yScale(pts[0][key])} r="4" fill={s.color}/>}
+                        {s.isActive&&finalForecast&&<circle cx={xScale(0)} cy={yScale(pacingMode==="tickets"?finalForecast:(finalRevForecast||0))} r="4" fill={s.color} opacity="0.6" strokeDasharray="2,2"/>}
                       </g>);
                     })}
                   </svg>
@@ -1705,6 +1870,148 @@ export default function Dashboard() {
       )}
 
 
+
+
+      {/* FORECAST */}
+      {tab==="forecast" && (
+        <div>
+          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>🔮 Future Event Forecast</div>
+            <p style={{fontSize:12,color:"#7a8499",marginBottom:0}}>Three-signal ensemble: global pacing curve + city history + current trajectory. Click Details for milestone breakdown.</p>
+          </div>
+
+          {forecastData.length===0?(
+            <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:"40px 20px",textAlign:"center",color:"#4d5568"}}>No upcoming events with start dates set.</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              {forecastData.map((f,i)=>{
+                const isActive=f.dte<=EVENT_DURATION&&f.daysToStart<=0;
+                const hasData=f.paidSoFar>0;
+                const showDetail=!!expandedForecast[f.event];
+                const MILESTONES=[90,60,45,30,14,7,EVENT_DURATION];
+                const stillToSell=f.combinedPaid?Math.max(0,f.combinedPaid-f.paidSoFar):null;
+                const pct=f.combinedPaid&&f.paidSoFar>0?Math.round(f.paidSoFar/f.combinedPaid*100):null;
+                return (
+                  <div key={i} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:14,padding:18,borderLeft:"3px solid "+(isActive?"#00d4aa":"#6366f1")}}>
+
+                    {/* Header row */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                      <div>
+                        <div style={{fontSize:15,fontWeight:700,color:"#e4e8f0"}}>{f.event}</div>
+                        <div style={{fontSize:11,color:"#7a8499",marginTop:2}}>
+                          {f.city} · {isActive?"🟢 Active — "+f.dte+"d to end":"🔵 "+f.daysToStart+"d to start"} · Ends {f.ed}
+                        </div>
+                        <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>Signal: {f.dominantSignal} · n={f.globalN} events{f.cityN>=2?" · "+f.cityN+" city":""}</div>
+                      </div>
+                      <button onClick={()=>setExpandedForecast(prev=>({...prev,[f.event]:!prev[f.event]}))}
+                        style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(showDetail?"#00d4aa":"#242a35"),background:showDetail?"#00d4aa22":"transparent",color:showDetail?"#00d4aa":"#7a8499",fontSize:12,fontWeight:showDetail?700:400,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                        {showDetail?"▲ Less":"▼ Details"}
+                      </button>
+                    </div>
+
+                    {/* Core stats — always visible: days to event, current sales, forecast */}
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:hasData?14:0}}>
+                      <div style={{background:"#0b0d11",borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{isActive?"Days to End":"Days to Start"}</div>
+                        <div style={{fontSize:22,fontWeight:700,color:isActive?"#f59e0b":"#6366f1"}}>{isActive?f.dte:f.daysToStart}</div>
+                        <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>Event ends {f.ed}</div>
+                      </div>
+                      <div style={{background:"#0b0d11",borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Current Tickets (Paid)</div>
+                        <div style={{fontSize:22,fontWeight:700,color:"#e4e8f0"}}>{f.paidSoFar.toLocaleString()}</div>
+                        {f.dailyRate>0&&<div style={{fontSize:10,color:"#7a8499",marginTop:1}}>{f.dailyRate}/day · 14d avg</div>}
+                      </div>
+                      <div style={{background:"#0b0d11",borderRadius:10,padding:"12px 14px"}}>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Current Revenue</div>
+                        <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.revSoFar)}</div>
+                      </div>
+                      {f.combinedPaid!==null&&(
+                        <div style={{background:"#6366f111",border:"1px solid #6366f133",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Tickets</div>
+                          <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>{f.combinedPaid.toLocaleString()}</div>
+                          {f.lowPaid&&f.highPaid&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{f.lowPaid.toLocaleString()} – {f.highPaid.toLocaleString()}</div>}
+                        </div>
+                      )}
+                      {f.combinedRev!==null&&(
+                        <div style={{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:9,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Revenue</div>
+                          <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.combinedRev)}</div>
+                        </div>
+                      )}
+                      {stillToSell!==null&&hasData&&(
+                        <div style={{background:"#f59e0b11",border:"1px solid #f59e0b33",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Still to Sell</div>
+                          <div style={{fontSize:22,fontWeight:700,color:"#f59e0b"}}>{stillToSell.toLocaleString()}</div>
+                          {pct!==null&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{pct}% sold so far</div>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Details panel — milestones + signals */}
+                    {showDetail&&hasData&&(
+                      <div style={{borderTop:"1px solid #242a35",paddingTop:14,marginTop:4}}>
+                        {/* Signal breakdown */}
+                        <div style={{marginBottom:14}}>
+                          <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Signal Breakdown</div>
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                            {[
+                              {label:"🌍 Global",val:f.globalForecast,col:"#7a8499",sub:"n="+f.globalN},
+                              {label:"🏙️ City",val:f.cityForecast,col:"#3b82f6",sub:f.cityN>=2?"n="+f.cityN:"insufficient data"},
+                              {label:"📈 Trajectory",val:f.trajForecast,col:"#f97316",sub:"14d rate"},
+                              {label:"🔮 Combined",val:f.combinedPaid,col:"#6366f1",sub:"ensemble",bold:true},
+                            ].map((sig,si)=>(
+                              <div key={si} style={{background:"#0b0d11",borderRadius:8,padding:"8px 12px",flex:1,minWidth:90,border:sig.bold?"1px solid #6366f133":"none",opacity:sig.val?1:0.4}}>
+                                <div style={{fontSize:9,color:"#4d5568",marginBottom:2}}>{sig.label}</div>
+                                <div style={{fontSize:14,fontWeight:sig.bold?700:600,color:sig.col}}>{sig.val?sig.val.toLocaleString():"—"}</div>
+                                <div style={{fontSize:9,color:"#4d5568"}}>{sig.sub}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Milestone table */}
+                        {Object.keys(f.milestones).length>0&&(
+                          <div>
+                            <div style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Milestone Predictions</div>
+                            <div style={{overflowX:"auto",borderRadius:10,border:"1px solid #242a35",background:"#0b0d11"}}>
+                              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+                                <thead><tr style={{background:"#13161c"}}>
+                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Milestone</th>
+                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Forecast Tickets</th>
+                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Forecast Revenue</th>
+                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Additional from Now</th>
+                                  <th style={{padding:"8px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35"}}>Status</th>
+                                </tr></thead>
+                                <tbody>{MILESTONES.map(m=>{
+                                  const d=f.milestones[m];
+                                  const isPast=m>=f.dte;
+                                  return (
+                                    <tr key={m} style={{opacity:isPast?0.4:1}} onMouseEnter={e=>e.currentTarget.style.background="#13161c"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap"}}>{m===EVENT_DURATION?"Event Start ("+m+"d)":m+"d to end"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#6366f1",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{d?d.paid.toLocaleString():"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{d&&d.rev?cur(d.rev):"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums"}}>{d?"+"+Math.max(0,d.paid-f.paidSoFar).toLocaleString():"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",fontSize:10}}>{isPast?<span style={{color:"#4d5568"}}>Already passed</span>:<span style={{color:"#00d4aa"}}>Upcoming</span>}</td>
+                                    </tr>
+                                  );
+                                })}</tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {!hasData&&(
+                      <div style={{fontSize:12,color:"#4d5568",fontStyle:"italic"}}>No sales data yet — forecast will appear once tickets start selling.</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{textAlign:"center",fontSize:11,color:"#4d5568",marginTop:32,paddingBottom:12}}>
         Created by McG
