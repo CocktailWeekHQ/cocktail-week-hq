@@ -520,15 +520,8 @@ export default function Dashboard() {
 
   const completedEventsList = useMemo(() => {
     // Include: events with a known end date in the past, OR events in DATA whose last sale date suggests completion (last sale > 30 days ago)
-    const eventsToShow = Object.values(allEventTotals).filter(e => {
-      const sd=startDates[e.event];
-      if(sd) { const ed=addDays(sd,EVENT_DURATION); return ed<today; }
-      // No start date: include if last sale was >30 days ago (likely completed)
-      const rows=DATA.filter(d=>d.event===e.event);
-      if(rows.length===0) return false;
-      const lastSale=rows.reduce((m,d)=>d.date>m?d.date:m,"");
-      return daysBetween(lastSale,today)>30;
-    });
+    // Include ALL events with ticket sales — completed AND future/active
+    const eventsToShow = Object.values(allEventTotals).filter(e => e.tickets > 0);
     return eventsToShow
       .map(e => {
         const s=eventStats[e.event]||{};
@@ -1923,8 +1916,8 @@ export default function Dashboard() {
                       </button>
                     </div>
 
-                    {/* Core stats — always visible: days to event, current sales, forecast */}
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:hasData?14:0}}>
+                    {/* Core stats */}
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10,marginBottom:hasData?14:0}}>
                       <div style={{background:"#0b0d11",borderRadius:10,padding:"12px 14px"}}>
                         <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{isActive?"Days to End":"Days to Start"}</div>
                         <div style={{fontSize:22,fontWeight:700,color:isActive?"#f59e0b":"#6366f1"}}>{isActive?f.dte:f.daysToStart}</div>
@@ -1939,24 +1932,25 @@ export default function Dashboard() {
                         <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Current Revenue</div>
                         <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.revSoFar)}</div>
                       </div>
-                      {f.combinedPaid!==null&&(
+                      {stillToSell!==null&&hasData&&(
                         <div style={{background:"#6366f111",border:"1px solid #6366f133",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Tickets</div>
+                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Additional</div>
+                          <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>+{stillToSell.toLocaleString()}</div>
+                          <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>tickets still to sell</div>
+                        </div>
+                      )}
+                      {f.combinedPaid!==null&&hasData&&(
+                        <div style={{background:"#6366f111",border:"1px solid #6366f155",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Total Tickets</div>
                           <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>{f.combinedPaid.toLocaleString()}</div>
                           {f.lowPaid&&f.highPaid&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{f.lowPaid.toLocaleString()} – {f.highPaid.toLocaleString()}</div>}
                         </div>
                       )}
-                      {f.combinedRev!==null&&(
+                      {f.combinedRev!==null&&hasData&&(
                         <div style={{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Revenue</div>
+                          <div style={{fontSize:9,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Total Revenue</div>
                           <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.combinedRev)}</div>
-                        </div>
-                      )}
-                      {stillToSell!==null&&hasData&&(
-                        <div style={{background:"#f59e0b11",border:"1px solid #f59e0b33",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#f59e0b",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Still to Sell</div>
-                          <div style={{fontSize:22,fontWeight:700,color:"#f59e0b"}}>{stillToSell.toLocaleString()}</div>
-                          {pct!==null&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{pct}% sold so far</div>}
+                          {f.combinedRev&&f.revSoFar>0&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>+{cur(Math.round((f.combinedRev-f.revSoFar)*100)/100)} additional</div>}
                         </div>
                       )}
                     </div>
