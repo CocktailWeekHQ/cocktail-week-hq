@@ -146,6 +146,7 @@ export default function Dashboard() {
   const [month, setMonth] = useState("All");
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [evtFilterOpen, setEvtFilterOpen] = useState(false);
+  const [evtsDropOpen, setEvtsDropOpen] = useState(false);
   const [tab, setTab] = useState("instant");
   const [startDates, setStartDates] = useState(EVENT_START_DATES);
   const [compareEvents, setCompareEvents] = useState([]);
@@ -711,17 +712,16 @@ export default function Dashboard() {
       const lowMultiplier = stdAt ? Math.max(0.7, 1 - stdAt.paidStd * 2) : 0.85;
       const highMultiplier = stdAt ? Math.min(1.5, 1 + stdAt.paidStd * 2) : 1.15;
 
-      // Milestone forecasts
+      // Milestone forecasts — simple daily rate projection to each future milestone
+      // At milestone m (days to end): daysFromNow = dte - m, additional = dailyRate × daysFromNow
       const milestones = {};
-      MILESTONES.forEach(m => {
-        if (m >= dte) return; // already past or now
-        const gPct = globalCurve.curve[m]?.paidPct;
-        const cPct = cityCurve?.curve[m]?.paidPct;
-        if (!combinedPaid || !gPct) return;
-        // Milestone must be >= current (can't un-sell tickets)
-        const mPaid = Math.max(paidSoFar, Math.round(combinedPaid * gPct));
-        const mRevRaw = combinedRev && globalCurve.curve[m]?.revPct ? Math.round(combinedRev * globalCurve.curve[m].revPct * 100)/100 : null;
-        const mRev = mRevRaw !== null ? Math.max(revSoFar, mRevRaw) : null;
+      MILESTONES.filter(m => m < dte).forEach(m => {
+        const daysToMilestone = dte - m; // days from today to when we hit milestone m
+        const mAdditionalTickets = Math.round(dailyRate * daysToMilestone);
+        const mPaid = paidSoFar + mAdditionalTickets;
+        // Revenue projection: same rate as current avg price
+        const avgPriceNow = paidSoFar > 0 ? revSoFar / paidSoFar : 0;
+        const mRev = revSoFar > 0 ? Math.round((revSoFar + mAdditionalTickets * avgPriceNow) * 100)/100 : null;
         milestones[m] = {paid: mPaid, rev: mRev};
       });
 
@@ -851,21 +851,35 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Tabs — 3 rows */}
-      <div style={{marginBottom:20,background:"#13161c",borderRadius:12,padding:4,border:"1px solid #242a35",display:"flex",flexDirection:"column",gap:2}}>
-        <div style={{display:"flex",gap:2}}>
-          {[{id:"instant",label:"Instant View",icon:"⚡"},{id:"daily",label:"Daily",icon:"📅"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+      {/* Tabs — 3 rows with outlines */}
+      {evtsDropOpen&&<div style={{position:"fixed",inset:0,zIndex:98}} onClick={()=>setEvtsDropOpen(false)}/>}
+      <div style={{marginBottom:20,background:"#13161c",borderRadius:12,padding:6,border:"1px solid #242a35",display:"flex",flexDirection:"column",gap:4}}>
+        <div style={{display:"flex",gap:4}}>
+          {[{id:"instant",label:"Instant View",icon:"⚡"},{id:"daily",label:"Daily Sales",icon:"📅"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 14px",background:tab===t.id?"#00d4aa22":"#0b0d11",border:"1px solid "+(tab===t.id?"#00d4aa":"#3a4050"),borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?700:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
           ))}
         </div>
-        <div style={{display:"flex",gap:2}}>
-          {[{id:"events",label:"By Event",icon:"🎉"},{id:"cities",label:"By City",icon:"🏙️"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+        <div style={{display:"flex",gap:4}}>
+          {/* Combined Events dropdown */}
+          <div style={{flex:1,position:"relative"}}>
+            <button onClick={()=>setEvtsDropOpen(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 14px",background:(tab==="events"||tab==="cities")?"#00d4aa22":"#0b0d11",border:"1px solid "+((tab==="events"||tab==="cities")?"#00d4aa":"#3a4050"),borderRadius:8,color:(tab==="events"||tab==="cities")?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:(tab==="events"||tab==="cities")?700:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>
+              {tab==="cities"?"🏙️ By City":tab==="events"?"🎉 By Event":"📊 Sales View"} ▾
+            </button>
+            {evtsDropOpen&&(
+              <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,zIndex:99,background:"#13161c",border:"1px solid #3a4050",borderRadius:8,overflow:"hidden",boxShadow:"0 8px 24px #00000088"}}>
+                {[{id:"events",label:"🎉 By Event"},{id:"cities",label:"🏙️ By City"}].map(t=>(
+                  <button key={t.id} onClick={()=>{setTab(t.id);setEvtsDropOpen(false);}} style={{display:"block",width:"100%",padding:"10px 14px",background:tab===t.id?"#00d4aa22":"transparent",border:"none",borderBottom:"1px solid #242a35",color:tab===t.id?"#00d4aa":"#e4e8f0",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?700:400,cursor:"pointer",textAlign:"left",transition:"all 0.15s"}}>{t.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          {[{id:"tracker",label:"Event Tracker",icon:"⏱️"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 14px",background:tab===t.id?"#00d4aa22":"#0b0d11",border:"1px solid "+(tab===t.id?"#00d4aa":"#3a4050"),borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?700:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
           ))}
         </div>
-        <div style={{display:"flex",gap:2}}>
-          {[{id:"tracker",label:"Event Tracker",icon:"⏱️"},{id:"stats",label:"Event Stats",icon:"📋"},{id:"forecast",label:"Forecast",icon:"🔮"}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+        <div style={{display:"flex",gap:4}}>
+          {[{id:"stats",label:"Event Stats",icon:"📋"},{id:"forecast",label:"Forecast",icon:"🔮"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 14px",background:tab===t.id?"#00d4aa22":"#0b0d11",border:"1px solid "+(tab===t.id?"#00d4aa":"#3a4050"),borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?700:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
           ))}
         </div>
       </div>
