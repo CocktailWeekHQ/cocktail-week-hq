@@ -1273,73 +1273,7 @@ export default function Dashboard() {
       {/* TRACKER */}
       {tab==="tracker" && (
         <div>
-          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
-            <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{"\u23f1\ufe0f"} Event Pacing Tracker</div>
-            <p style={{fontSize:12,color:"#7a8499",marginBottom:4}}>Comparisons based on <strong style={{color:"#00d4aa"}}>end date</strong> (start + {EVENT_DURATION} days). Event runs for {EVENT_DURATION+1} days including start date.</p>
-            <p style={{fontSize:11,color:"#4d5568",marginBottom:14}}>Select up to 6 events to overlay selling curves.</p>
-
-            <input placeholder="Search events..." value={searchEvt} onChange={e=>setSearchEvt(e.target.value)} style={{...IS,marginBottom:14}}/>
-
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10,maxHeight:420,overflowY:"auto",paddingRight:4}}>
-              {(()=>{
-                const now = today;
-                const evtList = allEvents.filter(e=>!searchEvt||e.toLowerCase().includes(searchEvt.toLowerCase()));
-                // Sort: upcoming (furthest out first -> soonest start), then active (soonest end first), then completed (most recent end first)
-                return evtList.sort((a,b)=>{
-                  const edA=startDates[a]?addDays(startDates[a],EVENT_DURATION):null;
-                  const edB=startDates[b]?addDays(startDates[b],EVENT_DURATION):null;
-                  const sdA=startDates[a]||null;
-                  const sdB=startDates[b]||null;
-                  const activeA=edA&&edA>=now&&sdA&&sdA<=now;
-                  const activeB=edB&&edB>=now&&sdB&&sdB<=now;
-                  const upcomingA=sdA&&sdA>now;
-                  const upcomingB=sdB&&sdB>now;
-                  const completedA=edA&&edA<now;
-                  const completedB=edB&&edB<now;
-                  // Group priority: active=0, upcoming=1, completed=2, no date=3
-                  const priA=activeA?0:upcomingA?1:completedA?2:3;
-                  const priB=activeB?0:upcomingB?1:completedB?2:3;
-                  if(priA!==priB) return priA-priB;
-                  if(upcomingA&&upcomingB) return (sdA||"").localeCompare(sdB||""); // soonest start first
-                  if(completedA&&completedB) return (edB||"").localeCompare(edA||""); // most recent first
-                  return (edA||"").localeCompare(edB||"");
-                });
-              })().map(evt => {
-                const sd=startDates[evt]; const ed=sd?addDays(sd,EVENT_DURATION):null;
-                const daysToEnd=ed?daysBetween(today,ed):null;
-                const daysToStart=sd?daysBetween(today,sd):null;
-                const isComp=compareEvents.includes(evt);
-                const evtTotal=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
-                const fs=FIRST_SALE_DATES[evt];
-                return (
-                  <div key={evt} style={{background:"#0b0d11",border:"1px solid "+(isComp?"#00d4aa":"#242a35"),borderRadius:10,padding:"12px 14px",...(isComp?{background:"#00d4aa06"}:{})}}>
-                    <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{evt}</div>
-                    <div style={{fontSize:11,color:"#7a8499",marginBottom:6}}>
-                      {evtTotal>0?fmt(evtTotal)+" tickets":"No sales yet"}{fs?" \u00b7 First sale: "+fs:""}
-                    </div>
-                    <div style={{display:"flex",gap:6,marginBottom:6}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>Start</div>
-                        <input type="date" value={sd||""} onChange={e=>setStartDates(p=>({...p,[evt]:e.target.value}))} style={{...IS,padding:"5px 8px",fontSize:12}}/>
-                      </div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>End (auto)</div>
-                        <div style={{padding:"6px 8px",background:"#13161c",border:"1px solid #242a35",borderRadius:8,fontSize:12,color:"#7a8499"}}>{ed||"Set start"}</div>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                      {daysToStart!==null && <span style={{fontSize:11,color:daysToStart<0?"#4d5568":daysToStart<14?"#f59e0b":"#7a8499"}}>{daysToStart<0?"Started "+Math.abs(daysToStart)+"d ago":daysToStart+"d to start"}</span>}
-                      {daysToEnd!==null && <span style={{fontSize:15,fontWeight:700,fontFamily:"'Sora',sans-serif",color:daysToEnd<0?"#4d5568":daysToEnd<=EVENT_DURATION?"#ef4444":daysToEnd<21?"#f59e0b":"#00d4aa"}}>{daysToEnd<0?Math.abs(daysToEnd)+"d since end":daysToEnd===0?"ENDS TODAY":daysToEnd+"d to end"}</span>}
-                    </div>
-                    <button onClick={()=>toggleCompare(evt)} style={{width:"100%",padding:"6px",borderRadius:8,border:"1px solid "+(isComp?"#00d4aa":"#242a35"),background:isComp?"#00d4aa":"transparent",color:isComp?"#0b0d11":"#7a8499",fontFamily:"inherit",fontSize:11,fontWeight:isComp?600:400,cursor:"pointer"}}>
-                      {isComp?"\u2713 Comparing":"Add to Comparison"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
+          {/* PACING CHARTS — shown at top when events selected */}
           {compareEvents.length>0 && (
             <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
@@ -1496,6 +1430,72 @@ export default function Dashboard() {
             </div>
           )}
 
+          <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
+            <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{"\u23f1\ufe0f"} Event Pacing Tracker</div>
+            <p style={{fontSize:12,color:"#7a8499",marginBottom:4}}>Comparisons based on <strong style={{color:"#00d4aa"}}>end date</strong> (start + {EVENT_DURATION} days). Event runs for {EVENT_DURATION+1} days including start date.</p>
+            <p style={{fontSize:11,color:"#4d5568",marginBottom:14}}>Select up to 6 events to overlay selling curves.</p>
+
+            <input placeholder="Search events..." value={searchEvt} onChange={e=>setSearchEvt(e.target.value)} style={{...IS,marginBottom:14}}/>
+
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10,maxHeight:420,overflowY:"auto",paddingRight:4}}>
+              {(()=>{
+                const now = today;
+                const evtList = allEvents.filter(e=>!searchEvt||e.toLowerCase().includes(searchEvt.toLowerCase()));
+                // Sort: upcoming (furthest out first -> soonest start), then active (soonest end first), then completed (most recent end first)
+                return evtList.sort((a,b)=>{
+                  const edA=startDates[a]?addDays(startDates[a],EVENT_DURATION):null;
+                  const edB=startDates[b]?addDays(startDates[b],EVENT_DURATION):null;
+                  const sdA=startDates[a]||null;
+                  const sdB=startDates[b]||null;
+                  const activeA=edA&&edA>=now&&sdA&&sdA<=now;
+                  const activeB=edB&&edB>=now&&sdB&&sdB<=now;
+                  const upcomingA=sdA&&sdA>now;
+                  const upcomingB=sdB&&sdB>now;
+                  const completedA=edA&&edA<now;
+                  const completedB=edB&&edB<now;
+                  // Group priority: active=0, upcoming=1, completed=2, no date=3
+                  const priA=activeA?0:upcomingA?1:completedA?2:3;
+                  const priB=activeB?0:upcomingB?1:completedB?2:3;
+                  if(priA!==priB) return priA-priB;
+                  if(upcomingA&&upcomingB) return (sdA||"").localeCompare(sdB||""); // soonest start first
+                  if(completedA&&completedB) return (edB||"").localeCompare(edA||""); // most recent first
+                  return (edA||"").localeCompare(edB||"");
+                });
+              })().map(evt => {
+                const sd=startDates[evt]; const ed=sd?addDays(sd,EVENT_DURATION):null;
+                const daysToEnd=ed?daysBetween(today,ed):null;
+                const daysToStart=sd?daysBetween(today,sd):null;
+                const isComp=compareEvents.includes(evt);
+                const evtTotal=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
+                const fs=FIRST_SALE_DATES[evt];
+                return (
+                  <div key={evt} style={{background:"#0b0d11",border:"1px solid "+(isComp?"#00d4aa":"#242a35"),borderRadius:10,padding:"12px 14px",...(isComp?{background:"#00d4aa06"}:{})}}>
+                    <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{evt}</div>
+                    <div style={{fontSize:11,color:"#7a8499",marginBottom:6}}>
+                      {evtTotal>0?fmt(evtTotal)+" tickets":"No sales yet"}{fs?" \u00b7 First sale: "+fs:""}
+                    </div>
+                    <div style={{display:"flex",gap:6,marginBottom:6}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>Start</div>
+                        <input type="date" value={sd||""} onChange={e=>setStartDates(p=>({...p,[evt]:e.target.value}))} style={{...IS,padding:"5px 8px",fontSize:12}}/>
+                      </div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>End (auto)</div>
+                        <div style={{padding:"6px 8px",background:"#13161c",border:"1px solid #242a35",borderRadius:8,fontSize:12,color:"#7a8499"}}>{ed||"Set start"}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      {daysToStart!==null && <span style={{fontSize:11,color:daysToStart<0?"#4d5568":daysToStart<14?"#f59e0b":"#7a8499"}}>{daysToStart<0?"Started "+Math.abs(daysToStart)+"d ago":daysToStart+"d to start"}</span>}
+                      {daysToEnd!==null && <span style={{fontSize:15,fontWeight:700,fontFamily:"'Sora',sans-serif",color:daysToEnd<0?"#4d5568":daysToEnd<=EVENT_DURATION?"#ef4444":daysToEnd<21?"#f59e0b":"#00d4aa"}}>{daysToEnd<0?Math.abs(daysToEnd)+"d since end":daysToEnd===0?"ENDS TODAY":daysToEnd+"d to end"}</span>}
+                    </div>
+                    <button onClick={()=>toggleCompare(evt)} style={{width:"100%",padding:"6px",borderRadius:8,border:"1px solid "+(isComp?"#00d4aa":"#242a35"),background:isComp?"#00d4aa":"transparent",color:isComp?"#0b0d11":"#7a8499",fontFamily:"inherit",fontSize:11,fontWeight:isComp?600:400,cursor:"pointer"}}>
+                      {isComp?"\u2713 Comparing":"Add to Comparison"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1627,7 +1627,7 @@ export default function Dashboard() {
 
           {statView==="tickets"&&(
             <Table columns={[
-              {key:"event",label:"Event"},{key:"city",label:"City"},
+              {key:"event",label:"Event"},
               {key:"ticketRevenue",label:"Revenue",fmt:v=>cur(v)},
               {key:"totalTickets",label:"Total Tickets",fmt:v=>fmt(v)},
               {key:"paidTickets",label:"Paid Tickets",fmt:v=>v!==null?fmt(v):"—"},
@@ -1638,7 +1638,7 @@ export default function Dashboard() {
 
           {statView==="logistics"&&(
             <Table columns={[
-              {key:"event",label:"Event"},{key:"city",label:"City"},
+              {key:"event",label:"Event"},
               {key:"startDate",label:"Start Date"},{key:"endDate",label:"End Date"},
               {key:"daysToStart",label:"Days to Start",fmt:v=>v===null?"—":v<0?"Completed":v===0?"Today":v+"d"},
               {key:"venues",label:"Venues",fmt:v=>v!==null?fmt(v):"—"},
