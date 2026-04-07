@@ -144,6 +144,8 @@ export default function Dashboard() {
   const [event, setEvent] = useState("All");
   const [year, setYear] = useState("All");
   const [month, setMonth] = useState("All");
+  const [selectedEvents, setSelectedEvents] = useState([]);
+  const [evtFilterOpen, setEvtFilterOpen] = useState(false);
   const [tab, setTab] = useState("instant");
   const [startDates, setStartDates] = useState(EVENT_START_DATES);
   const [compareEvents, setCompareEvents] = useState([]);
@@ -342,13 +344,13 @@ export default function Dashboard() {
 
   // Instant View
   const [instantPeriod, setInstantPeriod] = useState("yesterday");
-  const [dailyMode, setDailyMode] = useState("total"); // "total" | "byevent"
+  const [dailyMode, setDailyMode] = useState("total");
   const [dailyTop10, setDailyTop10] = useState(false);
   const [dailyTop10City, setDailyTop10City] = useState("All");
   const [dailyYoY, setDailyYoY] = useState(false);
-  const [expandedDateRow, setExpandedDateRow] = useState(null); // date string for expanded top10 row
-  const [selectedEvents, setSelectedEvents] = useState([]); // multi-select events filter
-  const [evtFilterOpen, setEvtFilterOpen] = useState(false); // dropdown open state
+  const [expandedDateRow, setExpandedDateRow] = useState(null);
+  const [evtView, setEvtView] = useState("all");
+
   const [dailyFrom, setDailyFrom] = useState("");
   const [dailyTo, setDailyTo] = useState("");
   const [dailyCity, setDailyCity] = useState("All");
@@ -393,7 +395,6 @@ export default function Dashboard() {
   const [tickerModal, setTickerModal] = useState(null); // "yesterday"|"7day"|"mtd"
   // Stats table sort
   const [statSort, setStatSort] = useState({col:"endDate",dir:"desc"});
-  const [evtView, setEvtView] = useState("all"); // "all"|"tickets"|"logistics"
   const [statsCity, setStatsCity] = useState("All");
   const [statsEvent, setStatsEvent] = useState("All");
   const [statsYear, setStatsYear] = useState("All");
