@@ -355,6 +355,8 @@ export default function Dashboard() {
   const [dailyTo, setDailyTo] = useState("");
   const [dailyCity, setDailyCity] = useState("All");
   const [dailyEvent, setDailyEvent] = useState("All");
+  const [dailySelectedEvents, setDailySelectedEvents] = useState([]);
+  const [dailyEvtOpen, setDailyEvtOpen] = useState(false);
   const CITY_COLORS = {"Belfast":"#6366f1","Cardiff":"#ec4899","Coventry":"#f59e0b","Dundee":"#00d4aa","Dunfermline":"#3b82f6","Inverness":"#22c55e","Leeds":"#a78bfa","Liverpool":"#ef4444","Manchester":"#f97316","Newcastle":"#06b6d4","Nottingham":"#84cc16","Perth":"#e11d48","Reading":"#8b5cf6","Sheffield":"#14b8a6","St Andrews":"#fbbf24","Stirling":"#60a5fa","Sunderland":"#fb923c","York":"#34d399"};
   const instantViewData = useMemo(() => {
     const ps = periodSales;
@@ -395,6 +397,7 @@ export default function Dashboard() {
   const [tickerModal, setTickerModal] = useState(null); // "yesterday"|"7day"|"mtd"
   // Stats table sort
   const [statSort, setStatSort] = useState({col:"endDate",dir:"desc"});
+  const [statView, setStatView] = useState("all");
   const [statsCity, setStatsCity] = useState("All");
   const [statsEvent, setStatsEvent] = useState("All");
   const [statsYear, setStatsYear] = useState("All");
@@ -439,7 +442,8 @@ export default function Dashboard() {
         const bartender=s.bartenderRevenue!==""&&s.bartenderRevenue!==undefined?+s.bartenderRevenue:null;
         const totalRev=(rep!==null||bartender!==null)?Math.round((ticketRev+(bartender||0)-(rep||0))*100)/100:null;
         const avg=paid&&paid>0?Math.round(ticketRev/paid*100)/100:null;
-        return { event:e.event, city:e.city, startDate:sd||"—", endDate:ed||"—",
+        const venues=s.venues!==''&&s.venues!==undefined&&s.venues!==null?+s.venues:null;
+        return { event:e.event, city:e.city, startDate:sd||"—", endDate:ed||"—", venues,
           totalTickets:e.tickets, ticketRevenue:ticketRev, freeTickets:free, addOns, paidTickets:paid,
           repCommission:rep, bartenderRevenue:bartender, totalRevenue:totalRev, avgPrice:avg };
       })
@@ -785,8 +789,8 @@ export default function Dashboard() {
               </select>
             </div>
           ))}
-          {/* Multi-select Events checkbox dropdown */}
-          <div style={{position:"relative"}}>
+          {/* Multi-select Events checkbox dropdown — only on By Event tab */}
+          {tab==="events"&&<div style={{position:"relative"}}>
             <button onClick={()=>setEvtFilterOpen(v=>!v)} style={{padding:"4px 10px",background:"#0b0d11",border:"1px solid "+(selectedEvents.length>0?"#00d4aa":"#242a35"),borderRadius:6,color:selectedEvents.length>0?"#00d4aa":"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8,marginRight:2}}>Events</span>
               {selectedEvents.length===0?"All":selectedEvents.length+" selected"} ▾
@@ -802,7 +806,7 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
           {evtFilterOpen&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setEvtFilterOpen(false)}/>}
           {(city!=="All"||year!=="All"||month!=="All"||selectedEvents.length>0)&&(
             <button onClick={()=>{setCity("All");setYear("All");setMonth("All");setSelectedEvents([]);}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
@@ -813,7 +817,7 @@ export default function Dashboard() {
       {/* BY EVENT */}
       {tab==="events" && (
         <div>
-          {city==="All"&&year==="All"&&month==="All"&&event==="All" ? (
+          {city==="All"&&year==="All"&&month==="All"&&selectedEvents.length===0 ? (
             // Default: show next 5 upcoming events only
             (()=>{
               const upcoming=allEvents.filter(e=>{
@@ -988,15 +992,26 @@ export default function Dashboard() {
                 <option value="All">All Cities</option>{CITIES_LIST.map(c=><option key={c}>{c}</option>)}
               </select>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:5}}>
-              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Event</span>
-              <select value={dailyEvent} onChange={e=>setDailyEvent(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
-                <option value="All">All Events</option>
-                {(dailyCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===dailyCity))).map(e=><option key={e}>{e}</option>)}
-              </select>
+            <div style={{position:"relative"}}>
+              <button onClick={()=>setDailyEvtOpen(v=>!v)} style={{padding:"4px 10px",background:"#0b0d11",border:"1px solid "+(dailySelectedEvents.length>0?"#00d4aa":"#242a35"),borderRadius:6,color:dailySelectedEvents.length>0?"#00d4aa":"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Events</span>
+                {dailySelectedEvents.length===0?"All":dailySelectedEvents.length+" selected"} ▾
+              </button>
+              {dailyEvtOpen&&(
+                <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#13161c",border:"1px solid #242a35",borderRadius:8,padding:8,minWidth:260,maxHeight:280,overflowY:"auto",marginTop:4,boxShadow:"0 8px 24px #00000066"}}>
+                  <button onClick={()=>setDailySelectedEvents([])} style={{display:"block",width:"100%",textAlign:"left",padding:"4px 8px",background:"transparent",border:"none",color:"#00d4aa",fontSize:11,cursor:"pointer",marginBottom:4}}>✓ Select All</button>
+                  {(dailyCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===dailyCity))).map(e=>(
+                    <label key={e} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",cursor:"pointer",borderRadius:4,background:dailySelectedEvents.includes(e)?"#00d4aa11":"transparent"}}>
+                      <input type="checkbox" checked={dailySelectedEvents.includes(e)} onChange={()=>setDailySelectedEvents(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{accentColor:"#00d4aa",cursor:"pointer"}}/>
+                      <span style={{fontSize:11,color:"#e4e8f0"}}>{e}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
-            {(dailyFrom||dailyTo||dailyCity!=="All"||dailyEvent!=="All")&&(
-              <button onClick={()=>{setDailyFrom("");setDailyTo("");setDailyCity("All");setDailyEvent("All");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+            {dailyEvtOpen&&<div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setDailyEvtOpen(false)}/>}
+            {(dailyFrom||dailyTo||dailyCity!=="All"||dailySelectedEvents.length>0)&&(
+              <button onClick={()=>{setDailyFrom("");setDailyTo("");setDailyCity("All");setDailyEvent("All");setDailySelectedEvents([]);setDailyEvtOpen(false);}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
             )}
           </div>
 
@@ -1006,7 +1021,7 @@ export default function Dashboard() {
               {(()=>{
                 const base=DATA.filter(d=>
                   (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
-                  (dailyCity==="All"||d.city===dailyCity)&&(dailyEvent==="All"||d.event===dailyEvent)
+                  (dailyCity==="All"||d.city===dailyCity)&&(dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
                 );
                 return fmt(base.length)+" records";
               })()}
@@ -1030,15 +1045,21 @@ export default function Dashboard() {
           {(()=>{
             if(dailyTop10){
               const src=dailyTop10City==="All"?DATA:DATA.filter(d=>d.city===dailyTop10City);
-              const top10=[];
-              const map={};
-              src.forEach(d=>{
-                const k=dailyTop10City==="All"?d.date:d.date+"||"+d.city;
-                if(!map[k]) map[k]={date:d.date,city:dailyTop10City==="All"?"All":d.city,tickets:0,revenue:0,evtSet:new Set()};
-                map[k].tickets+=d.tickets; map[k].revenue+=d.revenue; map[k].evtSet.add(d.event);
-              });
               const byEvt=dailyMode==="byevent";
-              const rows=Object.values(map).map(r=>({...r,revenue:Math.round(r.revenue*100)/100,events:r.evtSet.size,topEvt:[...r.evtSet][0]||""})).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+              let rows;
+              if(byEvt){
+                // Per event-date record, sorted by revenue
+                rows=src.map(d=>({date:d.date,topEvt:d.event,city:d.city,tickets:d.tickets,revenue:d.revenue,events:1}))
+                  .sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+              } else {
+                const map={};
+                src.forEach(d=>{
+                  const k=dailyTop10City==="All"?d.date:d.date+"||"+d.city;
+                  if(!map[k]) map[k]={date:d.date,city:dailyTop10City==="All"?"All":d.city,tickets:0,revenue:0,evtSet:new Set()};
+                  map[k].tickets+=d.tickets; map[k].revenue+=d.revenue; map[k].evtSet.add(d.event);
+                });
+                rows=Object.values(map).map(r=>({...r,revenue:Math.round(r.revenue*100)/100,events:r.evtSet.size,topEvt:[...r.evtSet][0]||""})).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+              }
               const cols=byEvt?["#","Date","Event","City","Revenue","Tickets"]:["#","Date","City","Total Revenue","Tickets","Events"];
               return (
                 <div>
@@ -1083,7 +1104,7 @@ export default function Dashboard() {
             }
             const dailyFiltered = DATA.filter(d=>
               (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
-              (dailyCity==="All"||d.city===dailyCity)&&(dailyEvent==="All"||d.event===dailyEvent)
+              (dailyCity==="All"||d.city===dailyCity)&&(dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
             );
             if(dailyMode==="byevent"){
               const beData=dailyFiltered.slice().sort((a,b)=>b.date.localeCompare(a.date));
@@ -1363,6 +1384,7 @@ export default function Dashboard() {
                 <KPI label="Avg Daily Sales" value={fmt(Math.round(avgDailyPaid*10)/10)} color="#3b82f6" sub="paid tkts/day"/>
                 <KPI label="Avg Daily Revenue" value={cur(Math.round(avgDailyRev*100)/100)} color="#ec4899"/>
                 <KPI label="Active Cities" value={fmt(cities)} color="#00d4aa"/>
+                <KPI label="Total Venues" value={fmt(filteredStats.reduce((s,e)=>s+(e.venues||0),0))} color="#3b82f6"/>
               </div>
             );
           })()}
@@ -1391,11 +1413,40 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
+          {/* View toggles */}
+          <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+            {[["all","All"],["tickets","Tickets"],["logistics","Logistics"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setStatView(v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(statView===v?"#00d4aa":"#242a35"),background:statView===v?"#00d4aa22":"transparent",color:statView===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:statView===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+            ))}
+          </div>
+
+          {statView==="tickets"&&(
+            <Table columns={[
+              {key:"event",label:"Event"},{key:"city",label:"City"},
+              {key:"ticketRevenue",label:"Revenue",fmt:v=>cur(v)},
+              {key:"totalTickets",label:"Total Tickets",fmt:v=>fmt(v)},
+              {key:"paidTickets",label:"Paid Tickets",fmt:v=>v!==null?fmt(v):"—"},
+              {key:"freeTickets",label:"Free Tickets",fmt:v=>v!==null?fmt(v):"—"},
+              {key:"avgPrice",label:"Avg Price / Ticket (Paid)",fmt:v=>v!==null?cur(v):"—"},
+            ]} data={(()=>{const filteredStats=sortedStatsList.filter(e=>{if(statsCity!=="All"&&e.city!==statsCity)return false;if(statsEvent!=="All"&&e.event!==statsEvent)return false;if(statsYear!=="All"&&!e.endDate.startsWith(statsYear))return false;if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0"))return false;if(statsFrom&&e.endDate<statsFrom)return false;if(statsTo&&e.endDate>statsTo)return false;return true;});return filteredStats;})()} maxRows={200}/>
+          )}
+
+          {statView==="logistics"&&(
+            <Table columns={[
+              {key:"event",label:"Event"},{key:"city",label:"City"},
+              {key:"startDate",label:"Start Date"},{key:"endDate",label:"End Date"},
+              {key:"daysToStart",label:"Days to Start",fmt:v=>v===null?"—":v<0?"Completed":v===0?"Today":v+"d"},
+              {key:"venues",label:"Venues",fmt:v=>v!==null?fmt(v):"—"},
+              {key:"totalTickets",label:"Total Tickets",fmt:v=>fmt(v)},
+              {key:"ticketRevenue",label:"Total Revenue",fmt:v=>cur(v)},
+            ]} data={(()=>{const filteredStats=sortedStatsList.filter(e=>{if(statsCity!=="All"&&e.city!==statsCity)return false;if(statsEvent!=="All"&&e.event!==statsEvent)return false;if(statsYear!=="All"&&!e.endDate.startsWith(statsYear))return false;if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0"))return false;if(statsFrom&&e.endDate<statsFrom)return false;if(statsTo&&e.endDate>statsTo)return false;return true;}).map(e=>({...e,daysToStart:e.startDate&&e.startDate!=="—"?daysBetween(today,e.startDate):null}));return filteredStats;})()} maxRows={200}/>
+          )}
+
+          {statView==="all"&&<div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
               <thead><tr style={{background:"#1a1e26"}}>
-                {["Event","City","Start Date","End Date","Tickets","Ticket Revenue","Add-ons","Free Tickets","Paid Tickets","Rep Commission","Bartender Revenue","Total Revenue","Avg Price / Ticket",""].map((h,hi)=>{
-                  const colKeys=["event","city","startDate","endDate","totalTickets","ticketRevenue","addOns","freeTickets","paidTickets","repCommission","bartenderRevenue","totalRevenue","avgPrice",""];
+                {["Event","City","Start Date","End Date","Venues","Tickets","Ticket Revenue","Add-ons","Free Tickets","Paid Tickets","Rep Commission","Bartender Revenue","Total Revenue","Avg Price / Ticket",""].map((h,hi)=>{
+                  const colKeys=["event","city","startDate","endDate","venues","totalTickets","ticketRevenue","addOns","freeTickets","paidTickets","repCommission","bartenderRevenue","totalRevenue","avgPrice",""];
                   const ck=colKeys[hi];
                   return (
                   <th key={h} onClick={()=>ck&&setStatSort(s=>({col:ck,dir:s.col===ck&&s.dir==="asc"?"desc":"asc"}))} style={{padding:"10px 12px",textAlign:"left",color:ck&&statSort.col===ck?"#00d4aa":"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap",cursor:ck?"pointer":"default",userSelect:"none"}}>
@@ -1422,6 +1473,7 @@ export default function Dashboard() {
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{e.city}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{e.startDate}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#7a8499",whiteSpace:"nowrap"}}>{e.endDate}</td>
+                  <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:e.venues!==null?"#e4e8f0":"#4d5568",fontVariantNumeric:"tabular-nums"}}>{e.venues!==null?e.venues:"—"}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums"}}>{e.totalTickets.toLocaleString()}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{"£"+e.ticketRevenue.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                   <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:e.addOns!==null?"#e4e8f0":"#4d5568",fontVariantNumeric:"tabular-nums"}}>{e.addOns!==null?e.addOns.toLocaleString():"—"}</td>
@@ -1443,7 +1495,7 @@ export default function Dashboard() {
                 );
               })()}
             </table>
-          </div>
+          </div>}
         </div>
       )}
 
