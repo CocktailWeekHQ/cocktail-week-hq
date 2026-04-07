@@ -149,6 +149,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState("instant");
   const [startDates, setStartDates] = useState(EVENT_START_DATES);
   const [compareEvents, setCompareEvents] = useState([]);
+  const [pacingMode, setPacingMode] = useState("tickets"); // "tickets" | "revenue"
   const [searchEvt, setSearchEvt] = useState("");
   const [customEvents, setCustomEvents] = useState([]);
   const [newEvtName, setNewEvtName] = useState("");
@@ -268,36 +269,131 @@ export default function Dashboard() {
   }, [filtered, eventStats]);
 
   const comparisonData = useMemo(() => {
+    const MILESTONES = [90,60,45,30,14,7,0];
     return compareEvents.map((evt,i) => {
       const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
       const sd = startDates[evt];
-      if (!sd || evtData.length===0) return {label:evt, data:[], color:COLORS[i%COLORS.length], labels:[]};
-      const endDate = addDays(sd, EVENT_DURATION);
-      let cum = 0;
-      const points = [];
-      evtData.forEach(d => { const dte=daysBetween(d.date,endDate); cum+=d.tickets; points.push({dte,cum}); });
-      points.sort((a,b) => b.dte-a.dte);
-      return { label:evt, data:points.map(p=>p.cum), color:COLORS[i%COLORS.length],
-        labels:points.map(p=>p.dte>=0 ? p.dte+"d to end" : "+"+Math.abs(p.dte)+"d after") };
+      if (!sd) return {label:evt,points:[],forecastPoints:[],color:COLORS[i%COLORS.length],isActive:false};
+      const endDate = addDays(sd,EVENT_DURATION);
+      const stats = eventStats[evt]||{};
+      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
+      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
+      // Distribute free tickets proportionally across days
+      let cumT=0,cumR=0;
+      const byDTE={};
+      evtData.forEach(d=>{
+        cumT+=d.tickets; cumR+=d.revenue;
+        const dte=daysBetween(d.date,endDate);
+        const freeSoFar=totalTickets>0?Math.round(freeTotal*cumT/totalTickets):0;
+        byDTE[dte]={paid:cumT-freeSoFar,rev:Math.round(cumR*100)/100};
+      });
+      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
+      const latestDTE=dtes[0]??null;
+      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
+      // Actual points
+      const points=dtes.map(dte=>({dte,paid:byDTE[dte].paid,rev:byDTE[dte].rev}));
+      // Forecast: project remaining milestones for active events
+      let forecastPoints=[];
+      if(isActive&&latestDTE!==null){
+        const currPaid=byDTE[latestDTE]?.paid||0;
+        const currRev=byDTE[latestDTE]?.rev||0;
+        // Find closest previous completed event for same city to use as pacing model
+        const evtCity=evtData[0]?.city||"";
+        const prevCompleted=Object.keys(startDates).filter(e=>{
+          const ed=addDays(startDates[e],EVENT_DURATION);
+          return ed<today&&DATA.some(d=>d.event===e&&d.city===evtCity)&&e!==evt;
+        }).sort((a,b)=>addDays(startDates[b],EVENT_DURATION).localeCompare(addDays(startDates[a],EVENT_DURATION)))[0];
+        if(prevCompleted){
+          const prevEnd=addDays(startDates[prevCompleted],EVENT_DURATION);
+          const prevData=DATA.filter(d=>d.event===prevCompleted);
+          const prevFree=(eventStats[prevCompleted]?.freeTickets||0);
+          const prevTotal=prevData.reduce((s,d)=>s+d.tickets,0);
+          let pCum=0,pCumR=0; const prevByDTE={};
+          prevData.sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+            pCum+=d.tickets;pCumR+=d.revenue;
+            const dte=daysBetween(d.date,prevEnd);
+            const pFree=prevTotal>0?Math.round(prevFree*pCum/prevTotal):0;
+            prevByDTE[dte]={paid:pCum-pFree,rev:Math.round(pCumR*100)/100};
+          });
+          const getPrev=(target)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
+          const prevAtCurr=getPrev(latestDTE);
+          if(prevAtCurr&&prevAtCurr.paid>0){
+            MILESTONES.filter(m=>m<latestDTE).forEach(m=>{
+              const prevAtM=getPrev(m);
+              if(prevAtM){
+                const fPaid=Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid));
+                const fRev=Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100;
+                forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
+              }
+            });
+          }
+        }
+      }
+      return {label:evt,points,forecastPoints,color:COLORS[i%COLORS.length],isActive,endDate};
     });
-  }, [compareEvents, startDates]);
+  }, [compareEvents, startDates, eventStats, today]);
 
   const pacingTable = useMemo(() => {
-    return compareEvents.map(evt => {
+    const MILESTONES = [90,60,45,30,14,7];
+    return compareEvents.map((evt,i) => {
       const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
       const sd = startDates[evt];
-      if (!sd) return {event:evt,total:0,totalRev:0,d90:null,d60:null,d45:null,d30:null,d14:null,d7:null,dStart:null,dEnd:null,d90Rev:null,d7Rev:null};
-      const endDate = addDays(sd, EVENT_DURATION);
-      let cum=0,cumRev=0; const byDTE={},byDTERev={};
-      evtData.forEach(d => { cum+=d.tickets; cumRev+=d.revenue; const dte=daysBetween(d.date,endDate); byDTE[dte]=cum; byDTERev[dte]=Math.round(cumRev*100)/100; });
-      const getAt = (map,target) => {
-        let closest=null;
-        Object.keys(map).forEach(k => { const n=parseInt(k); if(n>=target&&n<=target+5&&(closest===null||n<closest))closest=n; });
-        return closest!==null ? map[closest] : null;
-      };
-      return {event:evt, total:cum, totalRev:Math.round(cumRev*100)/100, d90:getAt(byDTE,90), d60:getAt(byDTE,60), d45:getAt(byDTE,45), d30:getAt(byDTE,30), d14:getAt(byDTE,14), d7:getAt(byDTE,7), dStart:getAt(byDTE,EVENT_DURATION), dEnd:getAt(byDTE,0), d90Rev:getAt(byDTERev,90), d7Rev:getAt(byDTERev,7)};
+      if (!sd) return {event:evt,color:COLORS[i%COLORS.length],total:null,totalRev:null,milestones:{}};
+      const endDate = addDays(sd,EVENT_DURATION);
+      const stats = eventStats[evt]||{};
+      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
+      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
+      let cumT=0,cumR=0; const byDTE={};
+      evtData.forEach(d=>{
+        cumT+=d.tickets;cumR+=d.revenue;
+        const dte=daysBetween(d.date,endDate);
+        const freeSoFar=totalTickets>0?Math.round(freeTotal*cumT/totalTickets):0;
+        byDTE[dte]={paid:cumT-freeSoFar,rev:Math.round(cumR*100)/100};
+      });
+      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
+      const latestDTE=dtes[0]??null;
+      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
+      const getAt=(target)=>{let cl=null;Object.keys(byDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?{...byDTE[cl],actual:true}:null;};
+      const paidTotal=totalTickets-freeTotal; const revTotal=Math.round(cumR*100)/100;
+      // Forecast for future milestones
+      const milestones={};
+      const evtCity=evtData[0]?.city||"";
+      let prevByDTE={},prevAtCurr=null;
+      if(isActive&&latestDTE!==null){
+        const prevCompleted=Object.keys(startDates).filter(e=>{
+          const ed=addDays(startDates[e],EVENT_DURATION);
+          return ed<today&&DATA.some(d=>d.event===e&&d.city===evtCity)&&e!==evt;
+        }).sort((a,b)=>addDays(startDates[b],EVENT_DURATION).localeCompare(addDays(startDates[a],EVENT_DURATION)))[0];
+        if(prevCompleted){
+          const prevEnd=addDays(startDates[prevCompleted],EVENT_DURATION);
+          const prevData=DATA.filter(d=>d.event===prevCompleted);
+          const prevFree=(eventStats[prevCompleted]?.freeTickets||0);
+          const prevTotal=prevData.reduce((s,d)=>s+d.tickets,0);
+          let pC=0,pCR=0;
+          prevData.sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
+            pC+=d.tickets;pCR+=d.revenue;const dte=daysBetween(d.date,prevEnd);
+            const pF=prevTotal>0?Math.round(prevFree*pC/prevTotal):0;
+            prevByDTE[dte]={paid:pC-pF,rev:Math.round(pCR*100)/100};
+          });
+          const getPrev=(t)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=t&&n<=t+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
+          prevAtCurr=getPrev(latestDTE);
+        }
+      }
+      MILESTONES.forEach(m=>{
+        const actual=getAt(m);
+        if(actual){milestones[m]={...actual,forecast:false};}
+        else if(isActive&&prevAtCurr&&prevAtCurr.paid>0){
+          const getPrev=(t)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=t&&n<=t+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
+          const prevAtM=getPrev(m);
+          const currPaid=byDTE[latestDTE]?.paid||0; const currRev=byDTE[latestDTE]?.rev||0;
+          if(prevAtM&&m<latestDTE){
+            milestones[m]={paid:Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)),rev:Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100,forecast:true,actual:false};
+          }
+        }
+      });
+      return {event:evt,color:COLORS[i%COLORS.length],isActive,paidTotal,revTotal,milestones,latestDTE};
     });
-  }, [compareEvents, startDates]);
+  }, [compareEvents, startDates, eventStats, today]);
 
   const today = new Date().toISOString().slice(0,10);
   const toggleCompare = evt => setCompareEvents(prev => prev.includes(evt) ? prev.filter(e=>e!==evt) : prev.length<6 ? [...prev,evt] : prev);
@@ -400,6 +496,8 @@ export default function Dashboard() {
   const [statView, setStatView] = useState("all");
   const [statsCity, setStatsCity] = useState("All");
   const [statsEvent, setStatsEvent] = useState("All");
+  const [statsSelectedEvents, setStatsSelectedEvents] = useState([]);
+  const [statsEvtOpen, setStatsEvtOpen] = useState(false);
   const [statsYear, setStatsYear] = useState("All");
   const [statsMonth, setStatsMonth] = useState("All");
   const [statsFrom, setStatsFrom] = useState("");
@@ -986,12 +1084,7 @@ export default function Dashboard() {
               <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>To</span>
               <input type="date" value={dailyTo} onChange={e=>setDailyTo(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:5}}>
-              <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>City</span>
-              <select value={dailyCity} onChange={e=>{setDailyCity(e.target.value);setDailyEvent("All");}} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
-                <option value="All">All Cities</option>{CITIES_LIST.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
+
             <div style={{position:"relative"}}>
               <button onClick={()=>setDailyEvtOpen(v=>!v)} style={{padding:"4px 10px",background:"#0b0d11",border:"1px solid "+(dailySelectedEvents.length>0?"#00d4aa":"#242a35"),borderRadius:6,color:dailySelectedEvents.length>0?"#00d4aa":"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Events</span>
@@ -1010,8 +1103,8 @@ export default function Dashboard() {
               )}
             </div>
             {dailyEvtOpen&&<div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setDailyEvtOpen(false)}/>}
-            {(dailyFrom||dailyTo||dailyCity!=="All"||dailySelectedEvents.length>0)&&(
-              <button onClick={()=>{setDailyFrom("");setDailyTo("");setDailyCity("All");setDailyEvent("All");setDailySelectedEvents([]);setDailyEvtOpen(false);}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+            {(dailyFrom||dailyTo||dailySelectedEvents.length>0)&&(
+              <button onClick={()=>{setDailyFrom("");setDailyTo("");setDailySelectedEvents([]);setDailyEvtOpen(false);}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
             )}
           </div>
 
@@ -1021,7 +1114,7 @@ export default function Dashboard() {
               {(()=>{
                 const base=DATA.filter(d=>
                   (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
-                  (dailyCity==="All"||d.city===dailyCity)&&(dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
+                  (dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
                 );
                 return fmt(base.length)+" records";
               })()}
@@ -1034,17 +1127,13 @@ export default function Dashboard() {
             </div>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <button onClick={()=>setDailyTop10(v=>!v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyTop10?"#f59e0b":"#242a35"),background:dailyTop10?"#f59e0b22":"transparent",color:dailyTop10?"#f59e0b":"#7a8499",fontSize:12,fontWeight:dailyTop10?700:400,cursor:"pointer",fontFamily:"inherit"}}>🏆 Top 10</button>
-              {dailyTop10&&(
-                <select value={dailyTop10City} onChange={e=>setDailyTop10City(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>
-                  <option value="All">All Cities</option>{CITIES_LIST.map(c=><option key={c}>{c}</option>)}
-                </select>
-              )}
+
             </div>
           </div>
 
           {(()=>{
             if(dailyTop10){
-              const src=dailyTop10City==="All"?DATA:DATA.filter(d=>d.city===dailyTop10City);
+              const src=DATA;
               const byEvt=dailyMode==="byevent";
               let rows;
               if(byEvt){
@@ -1054,8 +1143,8 @@ export default function Dashboard() {
               } else {
                 const map={};
                 src.forEach(d=>{
-                  const k=dailyTop10City==="All"?d.date:d.date+"||"+d.city;
-                  if(!map[k]) map[k]={date:d.date,city:dailyTop10City==="All"?"All":d.city,tickets:0,revenue:0,evtSet:new Set()};
+                  const k=d.date;
+                  if(!map[k]) map[k]={date:d.date,city:"All",tickets:0,revenue:0,evtSet:new Set()};
                   map[k].tickets+=d.tickets; map[k].revenue+=d.revenue; map[k].evtSet.add(d.event);
                 });
                 rows=Object.values(map).map(r=>({...r,revenue:Math.round(r.revenue*100)/100,events:r.evtSet.size,topEvt:[...r.evtSet][0]||""})).sort((a,b)=>b.revenue-a.revenue).slice(0,10);
@@ -1063,7 +1152,7 @@ export default function Dashboard() {
               const cols=byEvt?["#","Date","Event","City","Revenue","Tickets"]:["#","Date","City","Total Revenue","Tickets","Events"];
               return (
                 <div>
-                  <div style={{fontSize:12,fontWeight:700,color:"#f59e0b",marginBottom:10}}>🏆 Top 10 Sales Dates by Revenue{dailyTop10City!=="All"?" — "+dailyTop10City:""}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#f59e0b",marginBottom:10}}>🏆 Top 10 Sales Dates by Revenue</div>
                   <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                       <thead><tr style={{background:"#1a1e26"}}>
@@ -1071,7 +1160,7 @@ export default function Dashboard() {
                       </tr></thead>
                       <tbody>{rows.map((r,i)=>{
                           const isExpanded=expandedDateRow===r.date+(r.city!=="All"?r.city:"");
-                          const dayBreakdown=DATA.filter(d=>d.date===r.date&&(dailyTop10City==="All"||d.city===dailyTop10City)).sort((a,b)=>b.revenue-a.revenue);
+                          const dayBreakdown=DATA.filter(d=>d.date===r.date).sort((a,b)=>b.revenue-a.revenue);
                           return (<React.Fragment key={i}>
                             <tr onClick={()=>setExpandedDateRow(isExpanded?null:r.date+(r.city!=="All"?r.city:""))} style={{cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=isExpanded?"#1a1e26":""}>
                               <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:700}}>{i+1}</td>
@@ -1104,7 +1193,7 @@ export default function Dashboard() {
             }
             const dailyFiltered = DATA.filter(d=>
               (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
-              (dailyCity==="All"||d.city===dailyCity)&&(dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
+              (dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
             );
             if(dailyMode==="byevent"){
               const beData=dailyFiltered.slice().sort((a,b)=>b.date.localeCompare(a.date));
@@ -1251,65 +1340,160 @@ export default function Dashboard() {
 
           {compareEvents.length>0 && (
             <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
-              <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{"\ud83d\udcc8"} Cumulative Tickets \u2014 Days to End Date</div>
-              <p style={{fontSize:12,color:"#7a8499",marginBottom:14}}>Curves aligned by days to event end. Includes all sales during the {EVENT_DURATION+1}-day event period.</p>
-              <SparkChart series={comparisonData.filter(s=>s.data.length>0)} height={160}/>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600}}>📈 Pacing — Days to End Date</div>
+                  <p style={{fontSize:11,color:"#4d5568",margin:"2px 0 0"}}>Solid = actual paid tickets/revenue · Dashed = forecast based on previous event</p>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  {[["tickets","Paid Tickets"],["revenue","Revenue"]].map(([v,l])=>(
+                    <button key={v} onClick={()=>setPacingMode(v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(pacingMode===v?"#00d4aa":"#242a35"),background:pacingMode===v?"#00d4aa22":"transparent",color:pacingMode===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:pacingMode===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {(()=>{
+                const validSeries=comparisonData.filter(s=>s.points.length>0);
+                if(validSeries.length===0) return <div style={{color:"#4d5568",fontSize:12,padding:20,textAlign:"center"}}>No data yet — select events above</div>;
+                const key=pacingMode==="tickets"?"paid":"rev";
+                const allVals=[...validSeries.flatMap(s=>[...s.points.map(p=>p[key]),...s.forecastPoints.map(p=>p[key])])].filter(v=>v>0);
+                const maxVal=allVals.length?Math.max(...allVals)*1.1:1;
+                const W=700,H=220,PL=60,PR=20,PT=16,PB=40;
+                const DTE_MAX=95,DTE_MIN=-5;
+                const xScale=dte=>PL+(DTE_MAX-dte)/(DTE_MAX-DTE_MIN)*(W-PL-PR);
+                const yScale=v=>H-PB-(v/maxVal)*(H-PB-PT);
+                const mkPath=pts=>pts.length<2?"":pts.map((p,i)=>`${i===0?"M":"L"}${xScale(p.dte).toFixed(1)},${yScale(p[key]).toFixed(1)}`).join(" ");
+                const GRID_DTES=[90,60,45,30,14,7,0];
+                const yTicks=5;
+                return (
+                  <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",overflow:"visible"}}>
+                    {/* Grid lines */}
+                    {GRID_DTES.map(d=>(
+                      <g key={d}>
+                        <line x1={xScale(d)} y1={PT} x2={xScale(d)} y2={H-PB} stroke="#242a35" strokeWidth="1"/>
+                        <text x={xScale(d)} y={H-PB+14} textAnchor="middle" fontSize="9" fill="#4d5568">{d}d</text>
+                      </g>
+                    ))}
+                    {Array.from({length:yTicks+1},(_,i)=>{
+                      const v=maxVal*i/yTicks; const y=yScale(v);
+                      return (<g key={i}>
+                        <line x1={PL} y1={y} x2={W-PR} y2={y} stroke="#1a1e26" strokeWidth="1"/>
+                        <text x={PL-4} y={y+4} textAnchor="end" fontSize="9" fill="#4d5568">{pacingMode==="tickets"?Math.round(v).toLocaleString():"£"+Math.round(v).toLocaleString()}</text>
+                      </g>);
+                    })}
+                    {/* Today line */}
+                    {validSeries.some(s=>s.isActive)&&(()=>{
+                      const activeSeries=validSeries.find(s=>s.isActive);
+                      const todayDTE=activeSeries?.points[0]?.dte;
+                      if(todayDTE===undefined||todayDTE<DTE_MIN||todayDTE>DTE_MAX) return null;
+                      return (<g>
+                        <line x1={xScale(todayDTE)} y1={PT} x2={xScale(todayDTE)} y2={H-PB} stroke="#00d4aa" strokeWidth="1" strokeDasharray="4,4"/>
+                        <text x={xScale(todayDTE)} y={PT-4} textAnchor="middle" fontSize="9" fill="#00d4aa">Today</text>
+                      </g>);
+                    })()}
+                    {/* Series lines */}
+                    {validSeries.map((s,i)=>{
+                      const pts=[...s.points].sort((a,b)=>b.dte-a.dte);
+                      const fpts=[...s.forecastPoints].sort((a,b)=>b.dte-a.dte);
+                      // Connect actual to forecast
+                      const joinPt=pts.length?pts[pts.length-1]:null;
+                      const fullFcast=joinPt&&fpts.length?[{dte:joinPt.dte,paid:joinPt.paid,rev:joinPt.rev},...fpts]:fpts;
+                      return (<g key={i}>
+                        <path d={mkPath(pts)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round"/>
+                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke={s.color} strokeWidth="2" strokeDasharray="6,4" opacity="0.7" strokeLinejoin="round"/>}
+                        {pts[0]&&<circle cx={xScale(pts[0].dte)} cy={yScale(pts[0][key])} r="4" fill={s.color}/>}
+                      </g>);
+                    })}
+                  </svg>
+                );
+              })()}
+              {/* Legend */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:8}}>
+                {comparisonData.filter(s=>s.points.length>0).map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
+                    <div style={{width:20,height:3,background:s.color,borderRadius:2}}/>
+                    <span style={{color:"#7a8499"}}>{s.label}</span>
+                    {s.isActive&&<span style={{color:"#4d5568",fontSize:10}}>(active)</span>}
+                  </div>
+                ))}
+                {comparisonData.some(s=>s.forecastPoints.length>0)&&(
+                  <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
+                    <div style={{width:20,height:0,border:"1px dashed #7a8499",borderRadius:2}}/>
+                    <span style={{color:"#4d5568"}}>Forecast</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {compareEvents.length>=2 && (
             <div>
-              <div style={{fontSize:14,fontWeight:600,marginBottom:10}}>{"📊"} Pacing at Milestones</div>
-              <Table columns={[
-                {key:"event",label:"Event"},{key:"total",label:"Final Total",fmt:v=>fmt(v)},
-                {key:"d90",label:"90d to End",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"d60",label:"60d",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"d45",label:"45d",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"d30",label:"30d",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"d14",label:"14d",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"d7",label:"7d",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"dStart",label:"Event Start",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"dEnd",label:"Event End",fmt:v=>v!==null?fmt(v):"-"},
-                {key:"totalRev",label:"Final Rev",fmt:v=>v!==null?cur(v):"-"},
-                {key:"d90Rev",label:"90d Rev",fmt:v=>v!==null?cur(v):"-"},
-                {key:"d7Rev",label:"7d Rev",fmt:v=>v!==null?cur(v):"-"},
-              ]} data={pacingTable}/>
-
-              {/* HEAD TO HEAD COMPARISON */}
-              <div style={{fontSize:14,fontWeight:600,margin:"20px 0 10px"}}>{"🔴🟢"} Head-to-Head at Each Milestone</div>
-              <p style={{fontSize:11,color:"#7a8499",marginBottom:12}}>Green = ahead of {pacingTable[0]?.event?.split(" ").slice(0,2).join(" ")||"first event"}, Red = behind. All comparisons vs first selected event.</p>
-              <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
+              <div style={{fontSize:14,fontWeight:600,marginBottom:12}}>📊 Pacing at Milestones — Paid Tickets & Revenue</div>
+              <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c",marginBottom:20}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                   <thead><tr style={{background:"#1a1e26"}}>
-                    {["Event","90d","60d","45d","30d","14d","7d","Start","End","Final"].map(h=>(
+                    {["Event","90d","60d","45d","30d","14d","7d","Total Paid","Total Rev"].map(h=>(
                       <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>{pacingTable.map((row,ri)=>{
-                    const base=pacingTable[0];
-                    const milestones=[["d90","d90"],["d60","d60"],["d45","d45"],["d30","d30"],["d14","d14"],["d7","d7"],["dStart","dStart"],["dEnd","dEnd"],["total","total"]];
+                    const MILESTONES=[90,60,45,30,14,7];
                     return (
-                      <tr key={ri} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
-                        <td style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis"}}>{row.event}</td>
-                        {milestones.map(([mk])=>{
-                          const val=row[mk]; const baseVal=base[mk];
-                          const diff=val!==null&&baseVal!==null?val-baseVal:null;
-                          const isBase=ri===0;
-                          const col=isBase?"#e4e8f0":diff===null?"#4d5568":diff>0?"#22c55e":diff<0?"#ef4444":"#e4e8f0";
-                          return (
-                            <td key={mk} style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
-                              <div style={{color:col,fontWeight:isBase||diff===0?400:600}}>{val!==null?fmt(val):"-"}</div>
-                              {!isBase&&diff!==null&&val!==null&&<div style={{fontSize:10,color:col,marginTop:1}}>{diff>0?"+":""}{fmt(diff)}</div>}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                      <React.Fragment key={ri}>
+                        {/* Tickets row */}
+                        <tr onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                          <td rowSpan={2} style={{padding:"9px 12px",borderBottom:"1px solid #1e222b",borderRight:"1px solid #242a35",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",verticalAlign:"middle"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:8,height:8,borderRadius:"50%",background:row.color,flexShrink:0}}/>
+                              {row.event}
+                            </div>
+                            {row.isActive&&<div style={{fontSize:9,color:"#00d4aa",textTransform:"uppercase",letterSpacing:1,marginTop:2}}>Active</div>}
+                          </td>
+                          {MILESTONES.map(m=>{
+                            const d=row.milestones[m];
+                            const base=pacingTable[0]?.milestones[m];
+                            const diff=d&&base&&ri>0?d.paid-base.paid:null;
+                            return (
+                              <td key={m} style={{padding:"6px 12px",borderBottom:"1px solid #1a1e26",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+                                {d?<>
+                                  <div style={{color:d.forecast?"#6366f1":ri===0?"#e4e8f0":diff!==null&&diff>0?"#22c55e":diff!==null&&diff<0?"#ef4444":"#e4e8f0",fontWeight:d.forecast?400:600,fontStyle:d.forecast?"italic":"normal"}}>
+                                    {fmt(d.paid)}{d.forecast&&" ~"}
+                                  </div>
+                                  {ri>0&&diff!==null&&<div style={{fontSize:10,color:diff>0?"#22c55e":"#ef4444",marginTop:1}}>{diff>0?"+":""}{fmt(diff)}</div>}
+                                </>:<span style={{color:"#4d5568"}}>—</span>}
+                              </td>
+                            );
+                          })}
+                          <td style={{padding:"6px 12px",borderBottom:"1px solid #1a1e26",color:"#00d4aa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{row.paidTotal!==null?fmt(row.paidTotal):"—"}</td>
+                          <td style={{padding:"6px 12px",borderBottom:"1px solid #1a1e26",color:"#22c55e",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{row.revTotal!==null?cur(row.revTotal):"—"}</td>
+                        </tr>
+                        {/* Revenue row */}
+                        <tr onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                          {MILESTONES.map(m=>{
+                            const d=row.milestones[m];
+                            const base=pacingTable[0]?.milestones[m];
+                            const diff=d&&base&&ri>0?Math.round((d.rev-base.rev)*100)/100:null;
+                            return (
+                              <td key={m} style={{padding:"4px 12px",borderBottom:"1px solid #1e222b",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+                                {d?<>
+                                  <div style={{color:d.forecast?"#6366f177":"#22c55e88",fontSize:11,fontStyle:d.forecast?"italic":"normal"}}>
+                                    {cur(d.rev)}{d.forecast&&" ~"}
+                                  </div>
+                                  {ri>0&&diff!==null&&<div style={{fontSize:10,color:diff>0?"#22c55e":"#ef4444",marginTop:1}}>{diff>0?"+":""}{cur(diff)}</div>}
+                                </>:<span style={{color:"#4d5568",fontSize:11}}>—</span>}
+                              </td>
+                            );
+                          })}
+                          <td colSpan={2} style={{padding:"4px 12px",borderBottom:"1px solid #1e222b"}}/>
+                        </tr>
+                      </React.Fragment>
                     );
                   })}</tbody>
                 </table>
               </div>
+              <p style={{fontSize:10,color:"#4d5568",marginBottom:0}}>~ italic = forecast based on previous {[...new Set(pacingTable.map(r=>r.event).map(e=>{const d=DATA.find(d=>d.event===e);return d?.city||"";}).filter(Boolean))].join("/")} event pacing</p>
             </div>
           )}
+
         </div>
       )}
 
@@ -1329,7 +1513,7 @@ export default function Dashboard() {
               {label:"City",val:statsCity,set:v=>{setStatsCity(v);setStatsEvent("All");},opts:[["All","All Cities"],...CITIES_LIST.map(c=>[c,c])]},
               {label:"Year",val:statsYear,set:setStatsYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
               {label:"Month",val:statsMonth,set:setStatsMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
-              {label:"Event",val:statsEvent,set:setStatsEvent,opts:[["All","All Events"],...(statsCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===statsCity))).map(e=>[e,e])]},
+
             ].map(f=>(
               <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
                 <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>{f.label}</span>
@@ -1338,6 +1522,25 @@ export default function Dashboard() {
                 </select>
               </div>
             ))}
+            {/* Event multi-select */}
+            <div style={{position:"relative"}}>
+              <button onClick={()=>setStatsEvtOpen(v=>!v)} style={{padding:"4px 10px",background:"#0b0d11",border:"1px solid "+(statsSelectedEvents.length>0?"#00d4aa":"#242a35"),borderRadius:6,color:statsSelectedEvents.length>0?"#00d4aa":"#e4e8f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>Events</span>
+                {statsSelectedEvents.length===0?"All":statsSelectedEvents.length+" selected"} ▾
+              </button>
+              {statsEvtOpen&&(
+                <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#13161c",border:"1px solid #242a35",borderRadius:8,padding:8,minWidth:260,maxHeight:280,overflowY:"auto",marginTop:4,boxShadow:"0 8px 24px #00000066"}}>
+                  <button onClick={()=>setStatsSelectedEvents([])} style={{display:"block",width:"100%",textAlign:"left",padding:"4px 8px",background:"transparent",border:"none",color:"#00d4aa",fontSize:11,cursor:"pointer",marginBottom:4}}>✓ Select All</button>
+                  {(statsCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===statsCity))).map(e=>(
+                    <label key={e} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",cursor:"pointer",borderRadius:4,background:statsSelectedEvents.includes(e)?"#00d4aa11":"transparent"}}>
+                      <input type="checkbox" checked={statsSelectedEvents.includes(e)} onChange={()=>setStatsSelectedEvents(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{accentColor:"#00d4aa",cursor:"pointer"}}/>
+                      <span style={{fontSize:11,color:"#e4e8f0"}}>{e}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            {statsEvtOpen&&<div style={{position:"fixed",inset:0,zIndex:199}} onClick={()=>setStatsEvtOpen(false)}/>}
             <div style={{display:"flex",alignItems:"center",gap:5}}>
               <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>From</span>
               <input type="date" value={statsFrom} onChange={e=>setStatsFrom(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
@@ -1346,8 +1549,8 @@ export default function Dashboard() {
               <span style={{fontSize:10,color:"#4d5568",textTransform:"uppercase",letterSpacing:0.8}}>To</span>
               <input type="date" value={statsTo} onChange={e=>setStatsTo(e.target.value)} style={{padding:"4px 8px",background:"#0b0d11",border:"1px solid #242a35",borderRadius:6,color:"#e4e8f0",fontSize:12,fontFamily:"inherit"}}/>
             </div>
-            {(statsCity!=="All"||statsYear!=="All"||statsMonth!=="All"||statsEvent!=="All"||statsFrom||statsTo)&&(
-              <button onClick={()=>{setStatsCity("All");setStatsYear("All");setStatsMonth("All");setStatsEvent("All");setStatsFrom("");setStatsTo("");}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
+            {(statsCity!=="All"||statsYear!=="All"||statsMonth!=="All"||statsSelectedEvents.length>0||statsFrom||statsTo)&&(
+              <button onClick={()=>{setStatsCity("All");setStatsYear("All");setStatsMonth("All");setStatsSelectedEvents([]);setStatsFrom("");setStatsTo("");setStatsEvtOpen(false);}} style={{padding:"4px 12px",background:"#ef444422",border:"1px solid #ef444455",borderRadius:6,color:"#ef4444",fontSize:11,fontWeight:600,cursor:"pointer"}}>✕ Clear</button>
             )}
           </div>
 
@@ -1355,7 +1558,7 @@ export default function Dashboard() {
           {(()=>{
             const filteredStats = completedEventsList.filter(e=>{
               if(statsCity!=="All"&&e.city!==statsCity) return false;
-              if(statsEvent!=="All"&&e.event!==statsEvent) return false;
+              if(statsSelectedEvents.length>0&&!statsSelectedEvents.includes(e.event)) return false;
               if(statsYear!=="All"&&!e.endDate.startsWith(statsYear)) return false;
               if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0")) return false;
               if(statsFrom&&e.endDate<statsFrom) return false;
@@ -1457,7 +1660,7 @@ export default function Dashboard() {
               {(()=>{
                 const filteredStats=sortedStatsList.filter(e=>{
                   if(statsCity!=="All"&&e.city!==statsCity) return false;
-                  if(statsEvent!=="All"&&e.event!==statsEvent) return false;
+                  if(statsSelectedEvents.length>0&&!statsSelectedEvents.includes(e.event)) return false;
                   if(statsYear!=="All"&&!e.endDate.startsWith(statsYear)) return false;
                   if(statsMonth!=="All"&&e.endDate.slice(5,7)!==String(statsMonth).padStart(2,"0")) return false;
                   if(statsFrom&&e.endDate<statsFrom) return false;
