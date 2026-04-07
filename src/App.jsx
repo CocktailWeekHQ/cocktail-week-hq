@@ -677,6 +677,7 @@ export default function Dashboard() {
       const recentRows = rows.filter(d => daysBetween(d.date, today) <= 14);
       const recentPaid = recentRows.reduce((s,d) => s + d.tickets, 0);
       const dailyRate = recentRows.length > 0 ? recentPaid / Math.max(recentRows.length, 1) : 0;
+      // trajectory: current tickets + (daily rate × remaining days to event end)
       const trajForecast = paidSoFar + dailyRate * Math.max(0, dte);
 
       // Weights: more own data = more weight on trajectory
@@ -717,8 +718,10 @@ export default function Dashboard() {
         const gPct = globalCurve.curve[m]?.paidPct;
         const cPct = cityCurve?.curve[m]?.paidPct;
         if (!combinedPaid || !gPct) return;
-        const mPaid = Math.round(combinedPaid * gPct);
-        const mRev = combinedRev && globalCurve.curve[m]?.revPct ? Math.round(combinedRev * globalCurve.curve[m].revPct * 100)/100 : null;
+        // Milestone must be >= current (can't un-sell tickets)
+        const mPaid = Math.max(paidSoFar, Math.round(combinedPaid * gPct));
+        const mRevRaw = combinedRev && globalCurve.curve[m]?.revPct ? Math.round(combinedRev * globalCurve.curve[m].revPct * 100)/100 : null;
+        const mRev = mRevRaw !== null ? Math.max(revSoFar, mRevRaw) : null;
         milestones[m] = {paid: mPaid, rev: mRev};
       });
 
@@ -849,27 +852,23 @@ export default function Dashboard() {
       </div>
 
       {/* Tabs — 3 rows */}
-      {(()=>{
-        const tabGroups = [
-          [{id:"instant",label:"Instant View",icon:"⚡"},{id:"daily",label:"Daily",icon:"📅"}],
-          [{id:"events",label:"By Event",icon:"🎉"},{id:"cities",label:"By City",icon:"🏙️"}],
-          [{id:"tracker",label:"Event Tracker",icon:"⏱️"},{id:"stats",label:"Event Stats",icon:"📋"},{id:"forecast",label:"Forecast",icon:"🔮"}],
-        ];
-        const btn = t => (
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>
-            {t.icon} {t.label}
-          </button>
-        );
-        return (
-          <div style={{marginBottom:20,background:"#13161c",borderRadius:12,padding:4,border:"1px solid #242a35",display:"flex",flexDirection:"column",gap:2}}>
-            {tabGroups.map((group,gi)=>(
-              <div key={gi} style={{display:"flex",gap:2}}>
-                {group.map(t=>btn(t))}
-              </div>
-            ))}
-          </div>
-        );
-      })()}
+      <div style={{marginBottom:20,background:"#13161c",borderRadius:12,padding:4,border:"1px solid #242a35",display:"flex",flexDirection:"column",gap:2}}>
+        <div style={{display:"flex",gap:2}}>
+          {[{id:"instant",label:"Instant View",icon:"⚡"},{id:"daily",label:"Daily",icon:"📅"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:2}}>
+          {[{id:"events",label:"By Event",icon:"🎉"},{id:"cities",label:"By City",icon:"🏙️"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:2}}>
+          {[{id:"tracker",label:"Event Tracker",icon:"⏱️"},{id:"stats",label:"Event Stats",icon:"📋"},{id:"forecast",label:"Forecast",icon:"🔮"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 14px",background:tab===t.id?"#1a1e26":"transparent",border:"none",borderRadius:8,color:tab===t.id?"#00d4aa":"#7a8499",fontFamily:"inherit",fontSize:12.5,fontWeight:tab===t.id?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.2s"}}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+      </div>
 
       {/* INSTANT VIEW */}
       {tab==="instant" && (
@@ -1998,7 +1997,7 @@ export default function Dashboard() {
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:600,whiteSpace:"nowrap"}}>{m===EVENT_DURATION?"Event Start ("+m+"d)":m+"d to end"}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#6366f1",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{d?d.paid.toLocaleString():"—"}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{d&&d.rev?cur(d.rev):"—"}</td>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums"}}>{d?"+"+Math.max(0,d.paid-f.paidSoFar).toLocaleString():"—"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontVariantNumeric:"tabular-nums"}}>{d&&d.paid>f.paidSoFar?"+"+(d.paid-f.paidSoFar).toLocaleString():d?"No change":"—"}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",fontSize:10}}>{isPast?<span style={{color:"#4d5568"}}>Already passed</span>:<span style={{color:"#00d4aa"}}>Upcoming</span>}</td>
                                     </tr>
                                   );
