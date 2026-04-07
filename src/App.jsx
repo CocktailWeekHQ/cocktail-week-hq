@@ -866,7 +866,7 @@ export default function Dashboard() {
               </div>
               {evtView==="all"&&(
                 <Table columns={[
-                  {key:"event",label:"Event"},{key:"city",label:"City"},
+                  {key:"event",label:"Event"},
                   {key:"firstSale",label:"First Sale"},{key:"startDate",label:"Event Start"},{key:"endDate",label:"Event End"},
                   {key:"onSaleDays",label:"On-Sale Period",fmt:v=>v!==null?v+" days":"-"},
                   {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
@@ -881,7 +881,7 @@ export default function Dashboard() {
               )}
               {evtView==="tickets"&&(
                 <Table columns={[
-                  {key:"event",label:"Event"},{key:"city",label:"City"},
+                  {key:"event",label:"Event"},
                   {key:"revenue",label:"Revenue",fmt:v=>cur(v)},
                   {key:"tickets",label:"Total Tickets",fmt:v=>fmt(v)},
                   {key:"paidTickets",label:"Paid Tickets",fmt:v=>fmt(v)},
@@ -891,7 +891,7 @@ export default function Dashboard() {
               )}
               {evtView==="logistics"&&(
                 <Table columns={[
-                  {key:"event",label:"Event"},{key:"city",label:"City"},
+                  {key:"event",label:"Event"},
                   {key:"startDate",label:"Start Date"},{key:"endDate",label:"End Date"},
                   {key:"daysToStart",label:"Days to Start",fmt:v=>v===null?"—":v<0?"Completed":v===0?"Today":v+"d"},
                   {key:"venues",label:"Venues",fmt:v=>v!==null?fmt(v):"—"},
@@ -1015,7 +1015,7 @@ export default function Dashboard() {
               {[["total","Total by Day"],["byevent","By Event"]].map(([v,l])=>(
                 <button key={v} onClick={()=>setDailyMode(v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyMode===v?"#00d4aa":"#242a35"),background:dailyMode===v?"#00d4aa22":"transparent",color:dailyMode===v?"#00d4aa":"#7a8499",fontSize:12,fontWeight:dailyMode===v?700:400,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
               ))}
-              {!dailyTop10&&<button onClick={()=>setDailyYoY(v=>!v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyYoY?"#6366f1":"#242a35"),background:dailyYoY?"#6366f122":"transparent",color:dailyYoY?"#6366f1":"#7a8499",fontSize:12,fontWeight:dailyYoY?700:400,cursor:"pointer",fontFamily:"inherit"}}>📅 YoY</button>}
+              {!dailyTop10&&dailyMode==="total"&&<button onClick={()=>setDailyYoY(v=>!v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyYoY?"#6366f1":"#242a35"),background:dailyYoY?"#6366f122":"transparent",color:dailyYoY?"#6366f1":"#7a8499",fontSize:12,fontWeight:dailyYoY?700:400,cursor:"pointer",fontFamily:"inherit"}}>📅 YoY</button>}
             </div>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <button onClick={()=>setDailyTop10(v=>!v)} style={{padding:"5px 14px",borderRadius:7,border:"1px solid "+(dailyTop10?"#f59e0b":"#242a35"),background:dailyTop10?"#f59e0b22":"transparent",color:dailyTop10?"#f59e0b":"#7a8499",fontSize:12,fontWeight:dailyTop10?700:400,cursor:"pointer",fontFamily:"inherit"}}>🏆 Top 10</button>
