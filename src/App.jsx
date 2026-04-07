@@ -268,6 +268,7 @@ export default function Dashboard() {
     }).sort((a,b)=>b.revenue-a.revenue);
   }, [filtered, eventStats]);
 
+  const today = new Date().toISOString().slice(0,10);
   const comparisonData = useMemo(() => {
     const MILESTONES = [90,60,45,30,14,7,0];
     return compareEvents.map((evt,i) => {
@@ -395,7 +396,6 @@ export default function Dashboard() {
     });
   }, [compareEvents, startDates, eventStats, today]);
 
-  const today = new Date().toISOString().slice(0,10);
   const toggleCompare = evt => setCompareEvents(prev => prev.includes(evt) ? prev.filter(e=>e!==evt) : prev.length<6 ? [...prev,evt] : prev);
 
   // Period sales (from DATA only — master daily sales file)
