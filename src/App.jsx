@@ -865,7 +865,7 @@ export default function Dashboard() {
     allEvents.forEach(evt => {
       const sd = allStartDates[evt]; if (!sd) return;
       const ed = addDays(sd, EVENT_DURATION);
-      const dte = daysBetween(today, ed); // days to event END (matches curve index)
+      const dte = daysBetween(today, sd); // days to event START (matches curve index)
       if (dte < 0) return; // fully completed (past end date)
 
       const rows = activeData.filter(d => d.event === evt).sort((a,b) => a.date.localeCompare(b.date));
