@@ -479,7 +479,7 @@ export default function Dashboard() {
 
 
   const comparisonData = useMemo(() => {
-    const MILESTONES = [90,60,45,30,14,7,0];
+    const MILESTONES = [90,60,45,30,14,7,EVENT_DURATION,0]; // EVENT_DURATION=event start, 0=event end
     return compareEvents.map((evt,i) => {
       const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
       const sd = startDates[evt];
@@ -522,29 +522,26 @@ export default function Dashboard() {
         const combinedFinal=gForecast?((gForecast*wGlobal)+((cForecast||gForecast)*(cForecast?wCity:0))+(tForecast*wTraj))/total:tForecast;
         const remaining=Math.max(0,combinedFinal-currPaid);
         const avgPrice=currPaid>0?currRev/currPaid:0;
-        // Use pacing curve shape to distribute remaining across future milestones
-        MILESTONES.filter(m=>m<latestDTE).forEach(m=>{
-          const mGPct=gCurve.curve[m]?.paidPct||null;
-          let fPaid;
-          if(curGPct&&mGPct&&(1-curGPct)>0.01){
-            const frac=Math.min(1,Math.max(0,(mGPct-curGPct)/(1-curGPct)));
-            fPaid=Math.round(currPaid+remaining*frac);
-          } else {
-            fPaid=Math.round(currPaid+remaining*Math.min(1,(latestDTE-m)/latestDTE));
-          }
-          fPaid=Math.max(currPaid,fPaid);
-          const fRev=Math.round((currRev+(fPaid-currPaid)*avgPrice)*100)/100;
-          if(Number.isFinite(fPaid)&&Number.isFinite(fRev)) forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
-        });
-        // Add final point at dte=0
-        forecastPoints.push({dte:0,paid:Math.round(combinedFinal),rev:Math.round((currRev+remaining*avgPrice)*100)/100});
+        // Smooth forecast: 10 points from current DTE down to 0 (event end)
+        // DTE decreases left-to-right on chart, so we go latestDTE → 0
+        const finalPaid = Math.max(currPaid, Math.round(combinedFinal));
+        const finalRev = Math.max(currRev, Math.round((currRev+remaining*avgPrice)*100)/100);
+        for(let step=1; step<=10; step++){
+          const frac = step/10;
+          const accelFrac = Math.pow(frac, 0.7); // acceleration towards event
+          const stepDTE = Math.round(latestDTE - latestDTE*(frac)); // latestDTE down to 0
+          const stepPaid = Math.round(currPaid + remaining*accelFrac);
+          const stepRev = Math.round((currRev + (stepPaid-currPaid)*avgPrice)*100)/100;
+          forecastPoints.push({dte: Math.max(0,stepDTE), paid: stepPaid, rev: stepRev});
+        }
+        forecastPoints.push({dte:0, paid:finalPaid, rev:finalRev});
       }
       return {label:evt,points,forecastPoints,color:COLORS[i%COLORS.length],isActive,endDate};
     });
   }, [compareEvents, startDates, eventStats, today, globalPacingCurve]);
 
   const pacingTable = useMemo(() => {
-    const MILESTONES = [90,60,45,30,14,7];
+    const MILESTONES = [90,60,45,30,14,7,EVENT_DURATION,0]; // EVENT_DURATION=event start days to end, 0=event end
     return compareEvents.map((evt,i) => {
       const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
       const sd = startDates[evt];
@@ -1533,8 +1530,8 @@ export default function Dashboard() {
             <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:18,marginBottom:20}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
                 <div>
-                  <div style={{fontSize:14,fontWeight:600}}>📈 Pacing — Days to End Date</div>
-                  <p style={{fontSize:11,color:"#4d5568",margin:"2px 0 0"}}>Solid = actual paid tickets/revenue · Dashed = forecast based on previous event</p>
+                  <div style={{fontSize:14,fontWeight:600}}>📈 Pacing — Days to Event End</div>
+                  <p style={{fontSize:11,color:"#4d5568",margin:"2px 0 0"}}>Solid line = actual · 🟠 Dashed = forecast to event end</p>
                 </div>
                 <div style={{display:"flex",gap:6}}>
                   {[["tickets","Paid Tickets"],["revenue","Revenue"]].map(([v,l])=>(
@@ -1601,9 +1598,9 @@ export default function Dashboard() {
                         enrichedFcast;
                       return (<g key={i}>
                         <path d={mkPath(pts)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round"/>
-                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="6,4" opacity="0.8" strokeLinejoin="round"/>}
+                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke={s.color} strokeWidth="2" strokeDasharray="5,4" opacity="0.5" strokeLinejoin="round"/>}
                         {pts[0]&&<circle cx={xScale(pts[0].dte)} cy={yScale(pts[0][key])} r="4" fill={s.color}/>}
-                        {s.isActive&&finalForecast&&<circle cx={xScale(0)} cy={yScale(pacingMode==="tickets"?finalForecast:(finalRevForecast||0))} r="5" fill="#f59e0b" opacity="0.9"/>}
+                        
                       </g>);
                     })}
                   </svg>
@@ -1634,12 +1631,12 @@ export default function Dashboard() {
               <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c",marginBottom:20}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                   <thead><tr style={{background:"#1a1e26"}}>
-                    {["Event","90d","60d","45d","30d","14d","7d","Total Paid","Total Rev"].map(h=>(
+                    {["Event","90d","60d","45d","30d","14d","7d","Event Start","Event End","Total Paid","Total Rev"].map(h=>(
                       <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>{pacingTable.map((row,ri)=>{
-                    const MILESTONES=[90,60,45,30,14,7];
+                    const MILESTONES=[90,60,45,30,14,7,EVENT_DURATION,0];
                     return (
                       <React.Fragment key={ri}>
                         {/* Tickets row */}
