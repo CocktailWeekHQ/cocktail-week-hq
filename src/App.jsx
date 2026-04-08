@@ -182,37 +182,35 @@ export default function Dashboard() {
     // Auto-detect separator (tab or comma)
     const sep = lines[0].includes("\t") ? "\t" : ",";
     const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/[^a-z0-9_]/g,""));
-    // Map known column names
-    const iDate   = headers.findIndex(h => h==="sales_date" || h.includes("date"));
-    const iEvent  = headers.findIndex(h => h==="event_name" || h.includes("event"));
-    const iTicket = headers.findIndex(h => h==="sales_made" || h.includes("ticket") || h.includes("sold") || h.includes("qty"));
-    const iRev    = headers.findIndex(h => h==="revenue_made" || h.includes("rev"));
-    console.log("Sheet headers detected:", headers, "→ date:", iDate, "event:", iEvent, "tickets:", iTicket, "revenue:", iRev);
-    if (iDate < 0 || iEvent < 0 || iTicket < 0) {
-      console.warn("Sheet: required columns not found in", headers);
-      return null;
-    }
+    // Map columns — handles tickets_sold or sales_made
+    const iDate   = headers.findIndex(h => h.includes("date"));
+    const iEvent  = headers.findIndex(h => h.includes("event"));
+    const iTicket = headers.findIndex(h => h.includes("ticket") || h.includes("sold") || h.includes("qty") || h === "sales_made");
+    const iRev    = headers.findIndex(h => h.includes("rev"));
+    console.log("Sheet headers:", headers, "→ date:", iDate, "event:", iEvent, "tickets:", iTicket, "revenue:", iRev);
+    if (iDate < 0 || iEvent < 0 || iTicket < 0) { console.warn("Sheet: required columns not found"); return null; }
+    // Convert DD/MM/YYYY or YYYY-MM-DD to YYYY-MM-DD
+    const parseDate = d => {
+      if (!d) return null; d = d.trim();
+      if (d.match(/^\d{4}-\d{2}-\d{2}$/)) return d;
+      const m = d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      return m ? `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` : null;
+    };
+    // Strip commas from numbers e.g. "1,163.30" -> 1163.30
+    const parseNum = s => parseFloat((s||"").replace(/[",]/g,"")) || 0;
+    const knownEvents = new Set(DATA.map(d => d.event));
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
       const p = lines[i].split(sep);
       if (p.length < 3) continue;
-      const date = p[iDate]?.trim();
+      const date = parseDate(p[iDate]);
       const event = p[iEvent]?.trim();
-      const tickets = parseInt(p[iTicket]) || 0;
-      const revenue = iRev >= 0 ? parseFloat(p[iRev]) || 0 : 0;
-      // Derive city from event name
-      const city = DATA.find(d => d.event === event)?.city
-        || DATA.find(d => d.event.toLowerCase() === event.toLowerCase())?.city
-        || cityFromEventName(event);
-      if (date && event && date.match(/\d{4}-\d{2}-\d{2}/)) {
-        if (!city) console.warn("⚠ Sheet: unrecognised event name →", JSON.stringify(event));
-        rows.push({ date, event, city, tickets, revenue });
-      }
+      if (!date || !event || !knownEvents.has(event)) continue; // skip unknown events & bad dates
+      const tickets = Math.round(parseNum(p[iTicket]));
+      const revenue = iRev >= 0 ? parseNum(p[iRev]) : 0;
+      const city = DATA.find(d => d.event === event)?.city || cityFromEventName(event);
+      rows.push({ date, event, city, tickets, revenue });
     }
-    // Log any events from sheet not in hardcoded list
-    const knownEvents = new Set(DATA.map(d => d.event));
-    const unknownEvents = [...new Set(rows.filter(r => !knownEvents.has(r.event)).map(r => r.event))];
-    if (unknownEvents.length) console.warn("⚠ Sheet events not in hardcoded list:", unknownEvents);
     console.log("Sheet parsed:", rows.length, "rows, date range:", rows[0]?.date, "→", rows[rows.length-1]?.date);
     return rows.length > 0 ? rows : null;
   };
