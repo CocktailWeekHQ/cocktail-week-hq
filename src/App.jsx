@@ -1008,7 +1008,7 @@ export default function Dashboard() {
           value={pwInput}
           onChange={e=>{setPwInput(e.target.value);setPwError(false);}}
           onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-          style={{width:"100%",background:"#0b0d11",border:`1px solid ${pwError?"#ef4444":"#242a35"}`,borderRadius:8,color:"#e4e8f0",padding:"10px 14px",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}
+          style={{width:"100%",background:"#0b0d11",border:"1px solid "+(pwError?"#ef4444":"#242a35"),borderRadius:8,color:"#e4e8f0",padding:"10px 14px",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}
         />
         {pwError&&<div style={{fontSize:12,color:"#ef4444",marginBottom:8}}>Incorrect password</div>}
         <button
