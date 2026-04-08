@@ -271,133 +271,6 @@ export default function Dashboard() {
   }, [filtered, eventStats]);
 
   const today = new Date().toISOString().slice(0,10);
-  const comparisonData = useMemo(() => {
-    const MILESTONES = [90,60,45,30,14,7,0];
-    return compareEvents.map((evt,i) => {
-      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
-      const sd = startDates[evt];
-      if (!sd) return {label:evt,points:[],forecastPoints:[],color:COLORS[i%COLORS.length],isActive:false};
-      const endDate = addDays(sd,EVENT_DURATION);
-      const stats = eventStats[evt]||{};
-      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
-      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
-      // Daily sales = paid sales. Adjust only the FINAL total for free tickets.
-      let cumT=0,cumR=0;
-      const byDTE={};
-      evtData.forEach(d=>{
-        cumT+=d.tickets; cumR+=d.revenue;
-        const dte=daysBetween(d.date,endDate);
-        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
-      });
-      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
-      const latestDTE=dtes[0]??null;
-      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
-      // Actual points
-      const points=dtes.map(dte=>({dte,paid:byDTE[dte].paid,rev:byDTE[dte].rev}));
-      // Forecast: project remaining milestones for active events
-      let forecastPoints=[];
-      if(isActive&&latestDTE!==null){
-        const currPaid=byDTE[latestDTE]?.paid||0;
-        const currRev=byDTE[latestDTE]?.rev||0;
-        // Find closest previous completed event for same city to use as pacing model
-        const evtCity=evtData[0]?.city||"";
-        const prevCompleted=Object.keys(startDates).filter(e=>{
-          const ed=addDays(startDates[e],EVENT_DURATION);
-          return ed<today&&DATA.some(d=>d.event===e&&d.city===evtCity)&&e!==evt;
-        }).sort((a,b)=>addDays(startDates[b],EVENT_DURATION).localeCompare(addDays(startDates[a],EVENT_DURATION)))[0];
-        if(prevCompleted){
-          const prevEnd=addDays(startDates[prevCompleted],EVENT_DURATION);
-          const prevData=DATA.filter(d=>d.event===prevCompleted);
-          const prevFree=(eventStats[prevCompleted]?.freeTickets||0);
-          const prevTotal=prevData.reduce((s,d)=>s+d.tickets,0);
-          let pCum=0,pCumR=0; const prevByDTE={};
-          prevData.sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
-            pCum+=d.tickets;pCumR+=d.revenue;
-            const dte=daysBetween(d.date,prevEnd);
-            const pFree=prevTotal>0?Math.round(prevFree*pCum/prevTotal):0;
-            prevByDTE[dte]={paid:pCum-pFree,rev:Math.round(pCumR*100)/100};
-          });
-          const getPrev=(target)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
-          const prevAtCurr=getPrev(latestDTE);
-          if(prevAtCurr&&prevAtCurr.paid>0){
-            MILESTONES.filter(m=>m<latestDTE).forEach(m=>{
-              const prevAtM=getPrev(m);
-              if(prevAtM){
-                const fPaid=prevAtCurr.paid>0?Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)):0;
-                const fRev=prevAtCurr.rev>0?Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100:0;
-                if(Number.isFinite(fPaid)&&Number.isFinite(fRev)) forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
-              }
-            });
-          }
-        }
-      }
-      return {label:evt,points,forecastPoints,color:COLORS[i%COLORS.length],isActive,endDate};
-    });
-  }, [compareEvents, startDates, eventStats, today]);
-
-  const pacingTable = useMemo(() => {
-    const MILESTONES = [90,60,45,30,14,7];
-    return compareEvents.map((evt,i) => {
-      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
-      const sd = startDates[evt];
-      if (!sd) return {event:evt,color:COLORS[i%COLORS.length],total:null,totalRev:null,milestones:{}};
-      const endDate = addDays(sd,EVENT_DURATION);
-      const stats = eventStats[evt]||{};
-      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
-      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
-      // Daily sales = paid. Only subtract free from final totals.
-      let cumT=0,cumR=0; const byDTE={};
-      evtData.forEach(d=>{
-        cumT+=d.tickets;cumR+=d.revenue;
-        const dte=daysBetween(d.date,endDate);
-        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
-      });
-      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
-      const latestDTE=dtes[0]??null;
-      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
-      const getAt=(target)=>{let cl=null;Object.keys(byDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?{...byDTE[cl],actual:true}:null;};
-      const paidTotal=Math.max(0,totalTickets-freeTotal); const revTotal=Math.round(cumR*100)/100;
-      // Forecast for future milestones
-      const milestones={};
-      const evtCity=evtData[0]?.city||"";
-      let prevByDTE={},prevAtCurr=null;
-      if(isActive&&latestDTE!==null){
-        const prevCompleted=Object.keys(startDates).filter(e=>{
-          const ed=addDays(startDates[e],EVENT_DURATION);
-          return ed<today&&DATA.some(d=>d.event===e&&d.city===evtCity)&&e!==evt;
-        }).sort((a,b)=>addDays(startDates[b],EVENT_DURATION).localeCompare(addDays(startDates[a],EVENT_DURATION)))[0];
-        if(prevCompleted){
-          const prevEnd=addDays(startDates[prevCompleted],EVENT_DURATION);
-          const prevData=DATA.filter(d=>d.event===prevCompleted);
-          const prevFree=(eventStats[prevCompleted]?.freeTickets||0);
-          const prevTotal=prevData.reduce((s,d)=>s+d.tickets,0);
-          let pC=0,pCR=0;
-          prevData.sort((a,b)=>a.date.localeCompare(b.date)).forEach(d=>{
-            pC+=d.tickets;pCR+=d.revenue;const dte=daysBetween(d.date,prevEnd);
-            const pF=prevTotal>0?Math.round(prevFree*pC/prevTotal):0;
-            prevByDTE[dte]={paid:pC-pF,rev:Math.round(pCR*100)/100};
-          });
-          const getPrev=(t)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=t&&n<=t+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
-          prevAtCurr=getPrev(latestDTE);
-        }
-      }
-      MILESTONES.forEach(m=>{
-        const actual=getAt(m);
-        if(actual){milestones[m]={...actual,forecast:false};}
-        else if(isActive&&prevAtCurr&&prevAtCurr.paid>0){
-          const getPrev=(t)=>{let cl=null;Object.keys(prevByDTE).forEach(k=>{const n=parseInt(k);if(n>=t&&n<=t+5&&(cl===null||n<cl))cl=n;});return cl!==null?prevByDTE[cl]:null;};
-          const prevAtM=getPrev(m);
-          const currPaid=byDTE[latestDTE]?.paid||0; const currRev=byDTE[latestDTE]?.rev||0;
-          if(prevAtM&&m<latestDTE){
-            const fp=prevAtCurr.paid>0?Math.round(currPaid*(prevAtM.paid/prevAtCurr.paid)):0;
-            const fr=prevAtCurr.rev>0?Math.round(currRev*(prevAtM.rev/prevAtCurr.rev)*100)/100:0;
-            if(Number.isFinite(fp)&&Number.isFinite(fr)) milestones[m]={paid:fp,rev:fr,forecast:true,actual:false};
-          }
-        }
-      });
-      return {event:evt,color:COLORS[i%COLORS.length],isActive,paidTotal,revTotal,milestones,latestDTE};
-    });
-  }, [compareEvents, startDates, eventStats, today]);
 
   const toggleCompare = evt => setCompareEvents(prev => prev.includes(evt) ? prev.filter(e=>e!==evt) : prev.length<6 ? [...prev,evt] : prev);
 
@@ -553,6 +426,186 @@ export default function Dashboard() {
     });
   }, [completedEventsList, statSort]);
 
+  // ── GLOBAL PACING CURVE (shared by tracker + forecast) ──────────
+  const globalPacingCurve = useMemo(() => {
+    const buildCurve = (evtList) => {
+      const curves = [];
+      evtList.forEach(evt => {
+        const sd = startDates[evt.event]; if (!sd) return;
+        const ed = addDays(sd, EVENT_DURATION);
+        const rows = DATA.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
+        if (rows.length === 0) return;
+        const s = eventStats[evt.event] || {};
+        const freeTotal = s.freeTickets !== "" && s.freeTickets !== undefined ? +s.freeTickets : 0;
+        const rawTotal = rows.reduce((sum,d) => sum + d.tickets, 0);
+        const paidFinal = Math.max(1, rawTotal - freeTotal);
+        const revFinal = Math.max(1, rows.reduce((sum,d) => sum + d.revenue, 0));
+        let cum = 0, cumR = 0;
+        const byDTE = {};
+        rows.forEach(d => {
+          cum += d.tickets; cumR += d.revenue;
+          const dte = daysBetween(d.date, ed);
+          byDTE[Math.max(0,dte)] = {paidPct: cum / paidFinal, revPct: cumR / revFinal};
+        });
+        curves.push(byDTE);
+      });
+      if (curves.length === 0) return {curve:{}, std:{}, n:0};
+      const curve = {}, std = {};
+      for (let dte = 0; dte <= 120; dte++) {
+        const vals = curves.map(c => {
+          let best = null, bestD = 4;
+          Object.keys(c).forEach(k => { const d = Math.abs(parseInt(k)-dte); if(d<bestD){bestD=d;best=c[k];} });
+          return best;
+        }).filter(Boolean);
+        if (vals.length >= 1) {
+          const avgP = vals.reduce((s,v)=>s+v.paidPct,0)/vals.length;
+          const avgR = vals.reduce((s,v)=>s+v.revPct,0)/vals.length;
+          const stdP = vals.length > 1 ? Math.sqrt(vals.reduce((s,v)=>s+(v.paidPct-avgP)**2,0)/vals.length) : 0.1;
+          curve[dte] = {paidPct: avgP, revPct: avgR};
+          std[dte] = {paidStd: stdP};
+        }
+      }
+      return {curve, std, n: curves.length};
+    };
+    return {
+      global: buildCurve(completedEventsList),
+      byCity: (city) => {
+        const cityEvts = completedEventsList.filter(e => e.city === city);
+        return cityEvts.length >= 2 ? buildCurve(cityEvts) : null;
+      }
+    };
+  }, [completedEventsList, startDates, eventStats]);
+  // ── END GLOBAL PACING CURVE ──────────────────────────────────────
+
+
+  const comparisonData = useMemo(() => {
+    const MILESTONES = [90,60,45,30,14,7,0];
+    return compareEvents.map((evt,i) => {
+      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const sd = startDates[evt];
+      if (!sd) return {label:evt,points:[],forecastPoints:[],color:COLORS[i%COLORS.length],isActive:false};
+      const endDate = addDays(sd,EVENT_DURATION);
+      const stats = eventStats[evt]||{};
+      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
+      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
+      // Daily sales = paid sales. Adjust only the FINAL total for free tickets.
+      let cumT=0,cumR=0;
+      const byDTE={};
+      evtData.forEach(d=>{
+        cumT+=d.tickets; cumR+=d.revenue;
+        const dte=daysBetween(d.date,endDate);
+        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
+      });
+      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
+      const latestDTE=dtes[0]??null;
+      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
+      // Actual points
+      const points=dtes.map(dte=>({dte,paid:byDTE[dte].paid,rev:byDTE[dte].rev}));
+      // Forecast: use 3-signal ensemble (global curve + city curve + trajectory)
+      let forecastPoints=[];
+      if(isActive&&latestDTE!==null){
+        const currPaid=byDTE[latestDTE]?.paid||0;
+        const currRev=byDTE[latestDTE]?.rev||0;
+        const evtCity=evtData[0]?.city||"";
+        const gCurve=globalPacingCurve.global;
+        const cCurve=globalPacingCurve.byCity(evtCity);
+        const curGPct=gCurve.curve[latestDTE]?.paidPct||null;
+        const curCPct=cCurve?.curve[latestDTE]?.paidPct||null;
+        const recentRows=evtData.filter(d=>daysBetween(d.date,today)<=14);
+        const dailyRate=recentRows.length>0?recentRows.reduce((s,d)=>s+d.tickets,0)/Math.max(recentRows.length,1):0;
+        const dataRichness=Math.min(1,evtData.length/30);
+        const wGlobal=cCurve?0.25:0.4; const wCity=cCurve?0.35:0; const wTraj=0.35*dataRichness;
+        const gForecast=curGPct&&curGPct>0.01?currPaid/curGPct:null;
+        const cForecast=curCPct&&curCPct>0.01?currPaid/curCPct:null;
+        const tForecast=currPaid+dailyRate*Math.max(0,latestDTE);
+        const total=wGlobal+(cForecast?wCity:0)+wTraj;
+        const combinedFinal=gForecast?((gForecast*wGlobal)+((cForecast||gForecast)*(cForecast?wCity:0))+(tForecast*wTraj))/total:tForecast;
+        const remaining=Math.max(0,combinedFinal-currPaid);
+        const avgPrice=currPaid>0?currRev/currPaid:0;
+        // Use pacing curve shape to distribute remaining across future milestones
+        MILESTONES.filter(m=>m<latestDTE).forEach(m=>{
+          const mGPct=gCurve.curve[m]?.paidPct||null;
+          let fPaid;
+          if(curGPct&&mGPct&&(1-curGPct)>0.01){
+            const frac=Math.min(1,Math.max(0,(mGPct-curGPct)/(1-curGPct)));
+            fPaid=Math.round(currPaid+remaining*frac);
+          } else {
+            fPaid=Math.round(currPaid+remaining*Math.min(1,(latestDTE-m)/latestDTE));
+          }
+          fPaid=Math.max(currPaid,fPaid);
+          const fRev=Math.round((currRev+(fPaid-currPaid)*avgPrice)*100)/100;
+          if(Number.isFinite(fPaid)&&Number.isFinite(fRev)) forecastPoints.push({dte:m,paid:fPaid,rev:fRev});
+        });
+        // Add final point at dte=0
+        forecastPoints.push({dte:0,paid:Math.round(combinedFinal),rev:Math.round((currRev+remaining*avgPrice)*100)/100});
+      }
+      return {label:evt,points,forecastPoints,color:COLORS[i%COLORS.length],isActive,endDate};
+    });
+  }, [compareEvents, startDates, eventStats, today, globalPacingCurve]);
+
+  const pacingTable = useMemo(() => {
+    const MILESTONES = [90,60,45,30,14,7];
+    return compareEvents.map((evt,i) => {
+      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const sd = startDates[evt];
+      if (!sd) return {event:evt,color:COLORS[i%COLORS.length],total:null,totalRev:null,milestones:{}};
+      const endDate = addDays(sd,EVENT_DURATION);
+      const stats = eventStats[evt]||{};
+      const freeTotal = stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
+      const totalTickets = evtData.reduce((s,d)=>s+d.tickets,0);
+      // Daily sales = paid. Only subtract free from final totals.
+      let cumT=0,cumR=0; const byDTE={};
+      evtData.forEach(d=>{
+        cumT+=d.tickets;cumR+=d.revenue;
+        const dte=daysBetween(d.date,endDate);
+        byDTE[dte]={paid:cumT,rev:Math.round(cumR*100)/100};
+      });
+      const dtes=Object.keys(byDTE).map(Number).sort((a,b)=>b-a);
+      const latestDTE=dtes[0]??null;
+      const isActive=latestDTE!==null&&latestDTE>0&&endDate>=today;
+      const getAt=(target)=>{let cl=null;Object.keys(byDTE).forEach(k=>{const n=parseInt(k);if(n>=target&&n<=target+5&&(cl===null||n<cl))cl=n;});return cl!==null?{...byDTE[cl],actual:true}:null;};
+      const paidTotal=Math.max(0,totalTickets-freeTotal); const revTotal=Math.round(cumR*100)/100;
+      // Forecast for future milestones — 3-signal ensemble + pacing curve distribution
+      const milestones={};
+      const evtCity=evtData[0]?.city||"";
+      const currPaid=latestDTE!==null?byDTE[latestDTE]?.paid||0:0;
+      const currRev=latestDTE!==null?byDTE[latestDTE]?.rev||0:0;
+      MILESTONES.forEach(m=>{
+        const actual=getAt(m);
+        if(actual){milestones[m]={...actual,forecast:false};}
+        else if(isActive&&latestDTE!==null&&m<latestDTE){
+          const gCurve=globalPacingCurve.global;
+          const cCurve=globalPacingCurve.byCity(evtCity);
+          const curGPct=gCurve.curve[latestDTE]?.paidPct||null;
+          const curCPct=cCurve?.curve[latestDTE]?.paidPct||null;
+          const recentRows=evtData.filter(d=>daysBetween(d.date,today)<=14);
+          const dailyRate=recentRows.length>0?recentRows.reduce((s,d)=>s+d.tickets,0)/Math.max(recentRows.length,1):0;
+          const dataRichness=Math.min(1,evtData.length/30);
+          const wGlobal=cCurve?0.25:0.4; const wCity=cCurve?0.35:0; const wTraj=0.35*dataRichness;
+          const gForecast=curGPct&&curGPct>0.01?currPaid/curGPct:null;
+          const cForecast=curCPct&&curCPct>0.01?currPaid/curCPct:null;
+          const tForecast=currPaid+dailyRate*Math.max(0,latestDTE);
+          const wTotal=wGlobal+(cForecast?wCity:0)+wTraj;
+          const combinedFinal=gForecast?((gForecast*wGlobal)+((cForecast||gForecast)*(cForecast?wCity:0))+(tForecast*wTraj))/wTotal:tForecast;
+          const remaining=Math.max(0,combinedFinal-currPaid);
+          const avgPrice=currPaid>0?currRev/currPaid:0;
+          const mGPct=gCurve.curve[m]?.paidPct||null;
+          let fp;
+          if(curGPct&&mGPct&&(1-curGPct)>0.01){
+            const frac=Math.min(1,Math.max(0,(mGPct-curGPct)/(1-curGPct)));
+            fp=Math.round(currPaid+remaining*frac);
+          } else {
+            fp=Math.round(currPaid+remaining*Math.min(1,(latestDTE-m)/latestDTE));
+          }
+          fp=Math.max(currPaid,fp);
+          const fr=Math.round((currRev+(fp-currPaid)*avgPrice)*100)/100;
+          if(Number.isFinite(fp)&&Number.isFinite(fr)) milestones[m]={paid:fp,rev:fr,forecast:true,actual:false};
+        }
+      });
+      return {event:evt,color:COLORS[i%COLORS.length],isActive,paidTotal,revTotal,milestones,latestDTE};
+    });
+  }, [compareEvents, startDates, eventStats, today]);
+
   const cityPacingComparison = useMemo(() => {
     const results=[]; const citySeen=new Set();
     const evtsWithDates = Object.keys(startDates).filter(e=>startDates[e])
@@ -600,154 +653,183 @@ export default function Dashboard() {
 
   // ── FORECAST ENGINE ──────────────────────────────────────────────
   const forecastData = useMemo(() => {
-    const MILESTONES = [90, 60, 45, 30, 14, 7, EVENT_DURATION, 0];
+    // Milestones are days to EVENT START (0=start, negative=during event)
+    const MILESTONES = [90, 60, 45, 30, 14, 7, 0, -EVENT_DURATION];
 
-    // Build a pacing curve from a set of completed events
-    // Returns {curve: {dte -> avgPct}, std: {dte -> stdPct}, n, finals: []}
+    // ── Step 1: Build normalised pacing curve ──
+    // For each completed event: at each DTE, what % of final paid tickets were sold?
     const buildCurve = (evtList) => {
       const curves = [];
-      const finals = [];
       evtList.forEach(evt => {
         const sd = startDates[evt.event]; if (!sd) return;
         const ed = addDays(sd, EVENT_DURATION);
         const rows = DATA.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
-        if (rows.length === 0) return;
+        if (rows.length < 3) return; // need meaningful data
         const s = eventStats[evt.event] || {};
-        const freeTotal = s.freeTickets !== "" && s.freeTickets !== undefined ? +s.freeTickets : 0;
+        const freeTotal = s.freeTickets !== '' && s.freeTickets !== undefined ? +s.freeTickets : 0;
         const rawTotal = rows.reduce((sum,d) => sum + d.tickets, 0);
         const paidFinal = Math.max(1, rawTotal - freeTotal);
-        const revFinal = rows.reduce((sum,d) => sum + d.revenue, 0);
-        finals.push({paid: paidFinal, rev: revFinal});
+        const revFinal = Math.max(1, rows.reduce((sum,d) => sum + d.revenue, 0));
         let cum = 0, cumR = 0;
         const byDTE = {};
         rows.forEach(d => {
           cum += d.tickets; cumR += d.revenue;
-          const dte = daysBetween(d.date, ed);
-        // Daily sales are all paid — no freeSoFar adjustment on cumulative
-        byDTE[Math.max(0,dte)] = {paidPct: cum / paidFinal, revPct: cumR / revFinal};
+          // Use days to event START as reference point
+          const dteFromStart = daysBetween(d.date, sd);
+          const dteKey = dteFromStart; // positive = before start, 0 = start day, negative = during event
+          byDTE[dteKey] = {paidPct: cum / paidFinal, revPct: cumR / revFinal};
         });
-        curves.push(byDTE);
+        curves.push({byDTE, paidFinal, revFinal});
       });
-      if (curves.length === 0) return {curve:{}, std:{}, n:0, finals:[]};
-      // Average across all DTE points 0..120
+      if (curves.length === 0) return {curve:{}, std:{}, n:0};
+      // Average paidPct at each DTE 0..120, using nearest available point within ±3 days
       const curve = {}, std = {};
-      for (let dte = 0; dte <= 120; dte++) {
+      for (let dte = -EVENT_DURATION; dte <= 120; dte++) {
         const vals = curves.map(c => {
           let best = null, bestD = 4;
-          Object.keys(c).forEach(k => { const d = Math.abs(parseInt(k)-dte); if(d<bestD){bestD=d;best=c[k];} });
+          Object.keys(c.byDTE).forEach(k => {
+            const d = Math.abs(parseInt(k) - dte);
+            if (d < bestD) { bestD = d; best = c.byDTE[k]; }
+          });
           return best;
         }).filter(Boolean);
-        if (vals.length >= 2) {
-          const avgP = vals.reduce((s,v)=>s+v.paidPct,0)/vals.length;
-          const avgR = vals.reduce((s,v)=>s+v.revPct,0)/vals.length;
-          const stdP = Math.sqrt(vals.reduce((s,v)=>s+(v.paidPct-avgP)**2,0)/vals.length);
-          const stdR = Math.sqrt(vals.reduce((s,v)=>s+(v.revPct-avgR)**2,0)/vals.length);
-          curve[dte] = {paidPct: avgP, revPct: avgR};
-          std[dte] = {paidStd: stdP, revStd: stdR};
+        if (vals.length >= 1) {
+          const avgP = vals.reduce((s,v) => s + v.paidPct, 0) / vals.length;
+          const avgR = vals.reduce((s,v) => s + v.revPct, 0) / vals.length;
+          const stdP = vals.length > 1
+            ? Math.sqrt(vals.reduce((s,v) => s + (v.paidPct - avgP)**2, 0) / vals.length)
+            : 0.1;
+          curve[dte] = {paidPct: Math.min(1, Math.max(0.001, avgP)), revPct: Math.min(1, Math.max(0.001, avgR))};
+          std[dte] = {paidStd: stdP};
         }
       }
-      return {curve, std, n: curves.length, finals};
+      return {curve, std, n: curves.length};
     };
 
     const globalCurve = buildCurve(completedEventsList);
 
-    // For each upcoming/active event, generate forecast
     const results = [];
     allEvents.forEach(evt => {
       const sd = startDates[evt]; if (!sd) return;
       const ed = addDays(sd, EVENT_DURATION);
-      const dte = daysBetween(today, ed);
-      if (dte < 0) return; // completed — skip
-      const rows = DATA.filter(d => d.event === evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const dts = daysBetween(today, sd); // days to event START
+      const dte = dts; // forecast uses days to start as reference
+      if (daysBetween(today, ed) < 0) return; // fully completed (past end date)
+
+      const rows = DATA.filter(d => d.event === evt).sort((a,b) => a.date.localeCompare(b.date));
       const s = eventStats[evt] || {};
-      // Daily ticket sales = paid tickets. Free tickets are bulk allocations, not in daily sales data.
-      const rawSoFar = rows.reduce((sum,d) => sum + d.tickets, 0);
+      const paidSoFar = rows.reduce((sum,d) => sum + d.tickets, 0); // daily sales = paid
       const revSoFar = rows.reduce((sum,d) => sum + d.revenue, 0);
-      const paidSoFar = rawSoFar; // all daily sales are paid — no free ticket adjustment needed
+      const evtCity = rows[0]?.city || CITIES_LIST.find(c => evt.includes(c)) || '';
+
+      // ── Step 2: Current position on curve ──
       const curPct = globalCurve.curve[dte]?.paidPct || null;
       const curRevPct = globalCurve.curve[dte]?.revPct || null;
 
-      // City curve
-      const evtCity = rows[0]?.city || CITIES_LIST.find(c => evt.includes(c)) || "";
-      const cityEvents = completedEventsList.filter(e => e.city === evtCity);
-      const cityCurve = cityEvents.length >= 2 ? buildCurve(cityEvents) : null;
+      // ── Step 3: Three-signal ensemble ──
+      // Signal 1: Global curve → implied final
+      const globalForecast = curPct && curPct > 0.01 && paidSoFar > 0 ? paidSoFar / curPct : null;
+      const globalRevForecast = curRevPct && curRevPct > 0.01 && revSoFar > 0 ? revSoFar / curRevPct : null;
+
+      // Signal 2: City curve
+      const cityEvts = completedEventsList.filter(e => e.city === evtCity);
+      const cityCurve = cityEvts.length >= 2 ? buildCurve(cityEvts) : null;
       const cityCurPct = cityCurve?.curve[dte]?.paidPct || null;
       const cityCurRevPct = cityCurve?.curve[dte]?.revPct || null;
+      const cityForecast = cityCurPct && cityCurPct > 0.01 && paidSoFar > 0 ? paidSoFar / cityCurPct : null;
+      const cityRevForecast = cityCurRevPct && cityCurRevPct > 0.01 && revSoFar > 0 ? revSoFar / cityCurRevPct : null;
 
-      // Recent trajectory (last 14 days of sales → daily rate)
+      // Signal 3: Trajectory (14d rolling rate × remaining days)
       const recentRows = rows.filter(d => daysBetween(d.date, today) <= 14);
-      const recentPaid = recentRows.reduce((s,d) => s + d.tickets, 0);
-      const dailyRate = recentRows.length > 0 ? recentPaid / Math.max(recentRows.length, 1) : 0;
-      // trajectory: current tickets + (daily rate × remaining days to event end)
+      const dailyRate = recentRows.length > 0
+        ? recentRows.reduce((s,d) => s + d.tickets, 0) / recentRows.length
+        : (rows.length > 0 ? paidSoFar / rows.length : 0);
       const trajForecast = paidSoFar + dailyRate * Math.max(0, dte);
 
-      // Weights: more own data = more weight on trajectory
-      const dataRichness = Math.min(1, rows.length / 30); // 0..1
+      // Dynamic weights: closer to event = more trajectory weight
+      const dataRichness = Math.min(1, rows.length / 30);
+      const proximityWeight = Math.max(0, Math.min(1, 1 - dte / 90)); // 0 at 90d, 1 at 0d
       const hasCityData = cityCurve && cityCurve.n >= 2;
-      const wGlobal = hasCityData ? 0.25 : 0.4;
-      const wCity = hasCityData ? 0.35 : 0;
-      const wTraj = 0.35 * dataRichness;
-      const wCurveOnly = 1 - wTraj;
+      const wTraj = Math.max(0.2, 0.35 * dataRichness + 0.3 * proximityWeight);
+      const wCity = hasCityData ? Math.max(0.1, 0.35 * (1 - proximityWeight)) : 0;
+      const wGlobal = Math.max(0.1, (1 - wTraj - wCity));
 
-      // Forecasts from each signal
-      const globalForecast = curPct && curPct > 0.01 ? paidSoFar / curPct : null;
-      const cityForecast = cityCurPct && cityCurPct > 0.01 ? paidSoFar / cityCurPct : null;
-      const globalRevForecast = curRevPct && curRevPct > 0.01 ? revSoFar / curRevPct : null;
-      const cityRevForecast = cityCurRevPct && cityCurRevPct > 0.01 ? revSoFar / cityCurRevPct : null;
+      // ── Ensemble final ──
+      let ensemblePaid, ensembleRev;
+      const signals = [];
+      if (globalForecast !== null) signals.push({v: globalForecast, w: wGlobal});
+      if (cityForecast !== null) signals.push({v: cityForecast, w: wCity});
+      signals.push({v: trajForecast, w: wTraj});
+      const totalW = signals.reduce((s,x) => s + x.w, 0);
+      ensemblePaid = signals.reduce((s,x) => s + x.v * x.w, 0) / totalW;
+      ensemblePaid = Math.max(paidSoFar, ensemblePaid); // never below current
 
-      // Combined forecast
-      let combinedPaid = null, combinedRev = null;
-      if (globalForecast !== null) {
-        const gW = hasCityData ? wGlobal : (wGlobal + wCity);
-        const cW = hasCityData && cityForecast !== null ? wCity : 0;
-        const tW = wTraj;
-        const total = gW + cW + tW;
-        combinedPaid = (globalForecast * gW + (cityForecast||globalForecast) * cW + trajForecast * tW) / total;
-        combinedRev = globalRevForecast !== null ?
-          (globalRevForecast * gW + (cityRevForecast||globalRevForecast) * cW + (revSoFar + dailyRate * dte * (revSoFar/Math.max(paidSoFar,1))) * tW) / total : null;
-      }
+      const revSignals = [];
+      if (globalRevForecast !== null) revSignals.push({v: globalRevForecast, w: wGlobal});
+      if (cityRevForecast !== null) revSignals.push({v: cityRevForecast, w: wCity});
+      const avgPrice = paidSoFar > 0 ? revSoFar / paidSoFar : 0;
+      revSignals.push({v: revSoFar + dailyRate * dte * avgPrice, w: wTraj});
+      const totalRevW = revSignals.reduce((s,x) => s + x.w, 0);
+      ensembleRev = revSignals.reduce((s,x) => s + x.v * x.w, 0) / totalRevW;
+      ensembleRev = Math.max(revSoFar, ensembleRev);
 
-      // Confidence range from std dev
+      // ── Step 4: Forecast additional = max(0, ensembleFinal - current) ──
+      const forecastAdditional = Math.max(0, Math.round(ensemblePaid - paidSoFar));
+      const forecastRevAdditional = Math.max(0, Math.round((ensembleRev - revSoFar) * 100) / 100);
+      const combinedPaid = paidSoFar + forecastAdditional;
+      const combinedRev = Math.round((revSoFar + forecastRevAdditional) * 100) / 100;
+      const forecastAvgPrice = combinedPaid > 0 ? combinedRev / combinedPaid : avgPrice;
+
+      // Confidence range
       const stdAt = globalCurve.std[dte];
       const lowMultiplier = stdAt ? Math.max(0.7, 1 - stdAt.paidStd * 2) : 0.85;
       const highMultiplier = stdAt ? Math.min(1.5, 1 + stdAt.paidStd * 2) : 1.15;
 
-      // Milestone forecasts — simple daily rate projection to each future milestone
-      // At milestone m (days to end): daysFromNow = dte - m, additional = dailyRate × daysFromNow
+      // ── Step 5: Milestones — distribute additional using curve shape ──
+      // fraction_to_m = (curve[m].pct - curve[now].pct) / (1 - curve[now].pct)
+      // tickets_at_m = paidSoFar + forecastAdditional × fraction_to_m
       const milestones = {};
       MILESTONES.filter(m => m < dte).forEach(m => {
-        const daysToMilestone = dte - m; // days from today to when we hit milestone m
-        const mAdditionalTickets = Math.round(dailyRate * daysToMilestone);
-        const mPaid = paidSoFar + mAdditionalTickets;
-        // Revenue projection: same rate as current avg price
-        const avgPriceNow = paidSoFar > 0 ? revSoFar / paidSoFar : 0;
-        const mRev = revSoFar > 0 ? Math.round((revSoFar + mAdditionalTickets * avgPriceNow) * 100)/100 : null;
-        milestones[m] = {paid: mPaid, rev: mRev};
+        const mPct = globalCurve.curve[m]?.paidPct || null;
+        let mPaid, mRev;
+        if (curPct && mPct && (1 - curPct) > 0.01) {
+          // Curve shape: what fraction of remaining sales happen by milestone m
+          const fraction = Math.min(1, Math.max(0, (mPct - curPct) / (1 - curPct)));
+          mPaid = Math.round(paidSoFar + forecastAdditional * fraction);
+        } else {
+          // Linear fallback: proportion of remaining days elapsed
+          const fraction = dte > 0 ? Math.min(1, (dte - m) / dte) : 0;
+          mPaid = Math.round(paidSoFar + forecastAdditional * fraction);
+        }
+        mPaid = Math.max(paidSoFar, mPaid);
+        mRev = Math.round((revSoFar + (mPaid - paidSoFar) * forecastAvgPrice) * 100) / 100;
+        milestones[m] = {paid: mPaid, rev: Math.max(revSoFar, mRev)};
       });
 
-      // Dominant signal
-      let dominantSignal = "Global average";
-      if (dataRichness > 0.5 && wTraj > wGlobal) dominantSignal = "Current pace";
-      else if (hasCityData && wCity >= wGlobal) dominantSignal = evtCity+" history";
+      // Dominant signal label
+      let dominantSignal = 'Global average';
+      if (proximityWeight > 0.5) dominantSignal = 'Current pace';
+      else if (hasCityData && wCity > wGlobal) dominantSignal = evtCity + ' history';
 
       results.push({
         event: evt, city: evtCity, sd, ed, dte,
-        daysToStart: daysBetween(today, sd),
-        paidSoFar, revSoFar, rawSoFar,
+        daysToStart: dts,
+        paidSoFar, revSoFar,
+        forecastAdditional,
+        forecastRevAdditional,
+        combinedPaid, combinedRev,
+        lowPaid: Math.round(combinedPaid * lowMultiplier),
+        highPaid: Math.round(combinedPaid * highMultiplier),
         globalForecast: globalForecast ? Math.round(globalForecast) : null,
         cityForecast: cityForecast ? Math.round(cityForecast) : null,
         trajForecast: Math.round(trajForecast),
-        combinedPaid: combinedPaid ? Math.round(combinedPaid) : null,
-        combinedRev: combinedRev ? Math.round(combinedRev * 100)/100 : null,
-        lowPaid: combinedPaid ? Math.round(combinedPaid * lowMultiplier) : null,
-        highPaid: combinedPaid ? Math.round(combinedPaid * highMultiplier) : null,
         milestones, dominantSignal,
         cityN: cityCurve?.n || 0, globalN: globalCurve.n,
-        dailyRate: Math.round(dailyRate * 10)/10,
+        dailyRate: Math.round(dailyRate * 10) / 10,
       });
     });
 
-    return results.sort((a,b) => a.dte - b.dte); // soonest first
+    return results.sort((a,b) => a.dte - b.dte);
   }, [allEvents, startDates, completedEventsList, eventStats, today]);
   // ── END FORECAST ENGINE ──────────────────────────────────────────
 
@@ -1519,9 +1601,9 @@ export default function Dashboard() {
                         enrichedFcast;
                       return (<g key={i}>
                         <path d={mkPath(pts)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round"/>
-                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke={s.color} strokeWidth="2.5" strokeDasharray="6,4" opacity="0.65" strokeLinejoin="round"/>}
+                        {fullFcast.length>1&&<path d={mkPath(fullFcast)} fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeDasharray="6,4" opacity="0.8" strokeLinejoin="round"/>}
                         {pts[0]&&<circle cx={xScale(pts[0].dte)} cy={yScale(pts[0][key])} r="4" fill={s.color}/>}
-                        {s.isActive&&finalForecast&&<circle cx={xScale(0)} cy={yScale(pacingMode==="tickets"?finalForecast:(finalRevForecast||0))} r="4" fill={s.color} opacity="0.6" strokeDasharray="2,2"/>}
+                        {s.isActive&&finalForecast&&<circle cx={xScale(0)} cy={yScale(pacingMode==="tickets"?finalForecast:(finalRevForecast||0))} r="5" fill="#f59e0b" opacity="0.9"/>}
                       </g>);
                     })}
                   </svg>
@@ -1538,8 +1620,8 @@ export default function Dashboard() {
                 ))}
                 {comparisonData.some(s=>s.forecastPoints.length>0)&&(
                   <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11}}>
-                    <div style={{width:20,height:0,border:"1px dashed #7a8499",borderRadius:2}}/>
-                    <span style={{color:"#4d5568"}}>Forecast</span>
+                    <div style={{width:20,height:2,background:"#f59e0b",borderRadius:2,borderTop:"2px dashed #f59e0b"}}/>
+                    <span style={{color:"#f59e0b",fontWeight:600}}>Forecast (to event end)</span>
                   </div>
                 )}
               </div>
@@ -1908,7 +1990,7 @@ export default function Dashboard() {
                 const isActive=f.dte<=EVENT_DURATION&&f.daysToStart<=0;
                 const hasData=f.paidSoFar>0;
                 const showDetail=!!expandedForecast[f.event];
-                const MILESTONES=[90,60,45,30,14,7,EVENT_DURATION];
+                const MILESTONES=[90,60,45,30,14,7,0,-EVENT_DURATION]; // 0=Event Start, -9=Event End
                 const stillToSell=f.combinedPaid?Math.max(0,f.combinedPaid-f.paidSoFar):null;
                 const pct=f.combinedPaid&&f.paidSoFar>0?Math.round(f.paidSoFar/f.combinedPaid*100):null;
                 return (
@@ -1932,7 +2014,7 @@ export default function Dashboard() {
                     {/* Core stats */}
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10,marginBottom:hasData?14:0}}>
                       <div style={{background:"#0b0d11",borderRadius:10,padding:"12px 14px"}}>
-                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{isActive?"Days to End":"Days to Start"}</div>
+                        <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{f.daysToStart<=0&&f.daysToStart>=-EVENT_DURATION?"🟢 Active":"Days to Start"}</div>
                         <div style={{fontSize:22,fontWeight:700,color:isActive?"#f59e0b":"#6366f1"}}>{isActive?f.dte:f.daysToStart}</div>
                         <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>Event ends {f.ed}</div>
                       </div>
@@ -1945,25 +2027,25 @@ export default function Dashboard() {
                         <div style={{fontSize:9,color:"#4d5568",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Current Revenue</div>
                         <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.revSoFar)}</div>
                       </div>
-                      {stillToSell!==null&&hasData&&(
+                      {f.forecastAdditional>0&&hasData&&(
                         <div style={{background:"#6366f111",border:"1px solid #6366f133",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Additional</div>
-                          <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>+{stillToSell.toLocaleString()}</div>
-                          <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>tickets still to sell</div>
+                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Additional by Event End</div>
+                          <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>+{f.forecastAdditional.toLocaleString()}</div>
+                          <div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{f.dailyRate}/day avg × {f.daysToStart} days to start</div>
                         </div>
                       )}
                       {f.combinedPaid!==null&&hasData&&(
                         <div style={{background:"#6366f111",border:"1px solid #6366f155",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Total Tickets</div>
+                          <div style={{fontSize:9,color:"#6366f1",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Total Tickets at Event End</div>
                           <div style={{fontSize:22,fontWeight:700,color:"#6366f1"}}>{f.combinedPaid.toLocaleString()}</div>
                           {f.lowPaid&&f.highPaid&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>{f.lowPaid.toLocaleString()} – {f.highPaid.toLocaleString()}</div>}
                         </div>
                       )}
                       {f.combinedRev!==null&&hasData&&(
                         <div style={{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:10,padding:"12px 14px"}}>
-                          <div style={{fontSize:9,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Forecast Total Revenue</div>
+                          <div style={{fontSize:9,color:"#22c55e",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>🔮 Total Revenue at Event End</div>
                           <div style={{fontSize:22,fontWeight:700,color:"#22c55e"}}>{cur(f.combinedRev)}</div>
-                          {f.combinedRev&&f.revSoFar>0&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>+{cur(Math.round((f.combinedRev-f.revSoFar)*100)/100)} additional</div>}
+                          {f.forecastRevAdditional>0&&<div style={{fontSize:10,color:"#4d5568",marginTop:1}}>+{cur(f.forecastRevAdditional)} additional</div>}
                         </div>
                       )}
                     </div>
@@ -2003,12 +2085,12 @@ export default function Dashboard() {
                                 </tr></thead>
                                 <tbody>{MILESTONES.map(m=>{
                                   const d=f.milestones[m];
-                                  const isPast=m>=f.dte;
-                                  const addTkts=d?d.paid-f.paidSoFar:null;
-                                  const addRev=d&&d.rev?Math.round((d.rev-f.revSoFar)*100)/100:null;
+                                  const isPast=m>f.daysToStart&&m>0; // only standard milestones can be "past"; start/end always show
+                                  const addTkts=d&&d.paid>f.paidSoFar?d.paid-f.paidSoFar:null;
+                                  const addRev=d&&d.rev&&d.rev>f.revSoFar?Math.round((d.rev-f.revSoFar)*100)/100:null;
                                   return (
                                     <tr key={m} style={{opacity:isPast?0.35:1}} onMouseEnter={e=>e.currentTarget.style.background="#13161c"} onMouseLeave={e=>e.currentTarget.style.background=""}>
-                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:700,whiteSpace:"nowrap"}}>{m===EVENT_DURATION?"Event Start":m+"d to end"}</td>
+                                      <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontWeight:700,whiteSpace:"nowrap"}}>{m===0?"🎯 Event Start":m===-EVENT_DURATION?"🏁 Event End (Forecast Final)":m+"d to start"}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#e4e8f0",fontVariantNumeric:"tabular-nums"}}>{f.paidSoFar.toLocaleString()}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{cur(f.revSoFar)}</td>
                                       <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{addTkts!==null&&addTkts>0?"+"+addTkts.toLocaleString():d?"—":"—"}</td>
