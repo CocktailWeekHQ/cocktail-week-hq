@@ -36,6 +36,16 @@ const DATA = CSV.split("\n").map(line => {
 });
 
 const EVENT_DURATION = 9;
+
+// Extract city from event name — first word(s) before "Cocktail Week"
+const cityFromEventName = (name) => {
+  if (!name) return "";
+  const m = name.match(/^(.+?)\s+Cocktail Week/i);
+  if (m) return m[1].trim();
+  // Fallback: match against known cities
+  for (const c of CITIES_LIST) { if (name.includes(c)) return c; }
+  return name.split(" ")[0];
+};
 const fmt = n => typeof n==="number" ? n.toLocaleString("en-GB") : n;
 const cur = n => "\u00a3"+(typeof n==="number" ? n.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}) : "0.00");
 const pct = n => (typeof n==="number" ? n.toFixed(1) : "0")+"%";
@@ -147,8 +157,119 @@ export default function Dashboard() {
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [evtFilterOpen, setEvtFilterOpen] = useState(false);
   const [evtsDropOpen, setEvtsDropOpen] = useState(false);
+  // ── LIVE activeData FROM GOOGLE SHEETS ─────────────────────────────────
+  useEffect(() => { document.body.style.background = "#0b0d11"; document.body.style.margin = "0"; }, []);
+  const [liveData, setLiveData] = useState(null);
+  // Custom start dates entered by user for new events (persisted to localStorage)
+  const [customStartDates, setCustomStartDates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cwCustomStartDates") || "{}"); } catch { return {}; }
+  });
+  const [newEvtDateInputs, setNewEvtDateInputs] = useState({}); // temp input values
+  const saveCustomDate = (evtName, date) => {
+    const updated = {...customStartDates, [evtName]: date};
+    setCustomStartDates(updated);
+    localStorage.setItem("cwCustomStartDates", JSON.stringify(updated));
+  }; // null = not loaded yet
+  const [lastSync, setLastSync] = useState(null);
+  const [syncStatus, setSyncStatus] = useState("idle"); // "idle"|"loading"|"ok"|"error"
+
+  const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vShDvniXzAzksHZDKvI8VHkGVl8vqJFkU-NhjK5qG-fIsmm1QU1gDILQ8ADgv2f3WoRRJtM-8H5SXdn/pub?gid=0&single=true&output=csv";
+
+  const parseSheetCSV = (text) => {
+    // Sheet is tab-separated with columns: company_name, sales_date, event_name, sales_made, revenue_made
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) return null;
+    // Auto-detect separator (tab or comma)
+    const sep = lines[0].includes("\t") ? "\t" : ",";
+    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/[^a-z0-9_]/g,""));
+    // Map known column names
+    const iDate   = headers.findIndex(h => h==="sales_date" || h.includes("date"));
+    const iEvent  = headers.findIndex(h => h==="event_name" || h.includes("event"));
+    const iTicket = headers.findIndex(h => h==="sales_made" || h.includes("ticket") || h.includes("sold") || h.includes("qty"));
+    const iRev    = headers.findIndex(h => h==="revenue_made" || h.includes("rev"));
+    console.log("Sheet headers detected:", headers, "→ date:", iDate, "event:", iEvent, "tickets:", iTicket, "revenue:", iRev);
+    if (iDate < 0 || iEvent < 0 || iTicket < 0) {
+      console.warn("Sheet: required columns not found in", headers);
+      return null;
+    }
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const p = lines[i].split(sep);
+      if (p.length < 3) continue;
+      const date = p[iDate]?.trim();
+      const event = p[iEvent]?.trim();
+      const tickets = parseInt(p[iTicket]) || 0;
+      const revenue = iRev >= 0 ? parseFloat(p[iRev]) || 0 : 0;
+      // Derive city from event name
+      const city = DATA.find(d => d.event === event)?.city
+        || DATA.find(d => d.event.toLowerCase() === event.toLowerCase())?.city
+        || cityFromEventName(event);
+      if (date && event && date.match(/\d{4}-\d{2}-\d{2}/)) {
+        if (!city) console.warn("⚠ Sheet: unrecognised event name →", JSON.stringify(event));
+        rows.push({ date, event, city, tickets, revenue });
+      }
+    }
+    // Log any events from sheet not in hardcoded list
+    const knownEvents = new Set(DATA.map(d => d.event));
+    const unknownEvents = [...new Set(rows.filter(r => !knownEvents.has(r.event)).map(r => r.event))];
+    if (unknownEvents.length) console.warn("⚠ Sheet events not in hardcoded list:", unknownEvents);
+    console.log("Sheet parsed:", rows.length, "rows, date range:", rows[0]?.date, "→", rows[rows.length-1]?.date);
+    return rows.length > 0 ? rows : null;
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setSyncStatus("loading");
+      try {
+        // Fetch via Vercel serverless function (avoids CORS)
+        const r = await fetch("/api/sheet");
+        if (!r.ok) throw new Error("API " + r.status);
+        const text = await r.text();
+        if (!text || text.length < 50) throw new Error("Empty response");
+        const parsed = parseSheetCSV(text);
+        if (parsed && parsed.length > 0) {
+          setLiveData(parsed);
+          setLastSync(new Date());
+          setSyncStatus("ok");
+        } else {
+          throw new Error("No valid rows parsed");
+        }
+      } catch (e) {
+        console.warn("Sheet fetch failed:", e.message);
+        setSyncStatus("error");
+      }
+    };
+    fetchData();
+    const interval = setInterval(fetchData, 5 * 60 * 1000); // refresh every 5 min
+    return () => clearInterval(interval);
+  }, []);
+  // ── END LIVE activeData ─────────────────────────────────────────────────
+
+  // Detect new events from sheet that have no start date
+  const newEventsNeedingDates = useMemo(() => {
+    if (!liveData) return [];
+    const allKnown = {...EVENT_START_DATES, ...customStartDates};
+    const sheetEvents = [...new Set(liveData.map(d => d.event))];
+    return sheetEvents.filter(e => e && !allKnown[e]).sort();
+  }, [liveData, customStartDates]);
+
+  // allEvents list includes sheet events even if no start date
+  // Merge live sheet data with hardcoded DATA
+  // Live data takes precedence: if sheet has rows for a date+event, use those; otherwise use hardcoded
+  const activeData = useMemo(() => {
+    if (!liveData || liveData.length === 0) return DATA;
+    // Build a set of date+event keys from live data
+    const liveKeys = new Set(liveData.map(d => d.date + "|" + d.event));
+    // Keep hardcoded rows that aren't in live data
+    const hardcodedFiltered = DATA.filter(d => !liveKeys.has(d.date + "|" + d.event));
+    return [...hardcodedFiltered, ...liveData].sort((a,b) => a.date.localeCompare(b.date));
+  }, [liveData]);
+
   const [tab, setTab] = useState("instant");
-  const [startDates, setStartDates] = useState(EVENT_START_DATES);
+  // Merge hardcoded + custom start dates (custom takes priority for new events)
+  const [startDates, setStartDates] = useState(() => ({...EVENT_START_DATES}));
+  // Keep allStartDates in sync with customStartDates
+  const allStartDates = useMemo(() => ({...EVENT_START_DATES, ...customStartDates}), [customStartDates]);
   const [compareEvents, setCompareEvents] = useState([]);
   const [pacingMode, setPacingMode] = useState("tickets"); // "tickets" | "revenue"
   const [expandedForecast, setExpandedForecast] = useState({}); // {eventName: bool}
@@ -195,18 +316,18 @@ export default function Dashboard() {
   }, [eventStats]);
 
   const allEvents = useMemo(() => {
-    const fromData = [...new Set(DATA.map(d=>d.event))];
-    const fromDates = Object.keys(startDates);
+    const fromData = [...new Set(activeData.map(d=>d.event))];
+    const fromDates = Object.keys(allStartDates);
     const fromCustom = customEvents.map(e=>e.name);
     return [...new Set([...fromData,...fromDates,...fromCustom])].sort();
   }, [startDates, customEvents]);
 
   const getEndDate = useCallback((evt) => {
-    const sd = startDates[evt];
+    const sd = allStartDates[evt];
     return sd ? addDays(sd, EVENT_DURATION) : null;
   }, [startDates]);
 
-  const filtered = useMemo(() => DATA.filter(d =>
+  const filtered = useMemo(() => activeData.filter(d =>
     (city==="All" || d.city===city) &&
     (selectedEvents.length===0 || selectedEvents.includes(d.event)) &&
     (year==="All" || d.date.slice(0,4)===year) &&
@@ -215,7 +336,7 @@ export default function Dashboard() {
 
   const cityEvents = useMemo(() => {
     if (city==="All") return allEvents;
-    return allEvents.filter(e => DATA.some(d=>d.event===e && d.city===city) || customEvents.some(c=>c.name===e && c.city===city));
+    return allEvents.filter(e => activeData.some(d=>d.event===e && d.city===city) || customEvents.some(c=>c.name===e && c.city===city));
   }, [city, allEvents, customEvents]);
 
   const totTickets = filtered.reduce((s,d)=>s+d.tickets,0);
@@ -231,7 +352,7 @@ export default function Dashboard() {
       if (!map[d.event].lastDate || d.date>map[d.event].lastDate) map[d.event].lastDate = d.date;
     });
     return Object.values(map).map(e => {
-      const sd = startDates[e.event]; const ed = sd ? addDays(sd,EVENT_DURATION) : null;
+      const sd = allStartDates[e.event]; const ed = sd ? addDays(sd,EVENT_DURATION) : null;
       const fs = FIRST_SALE_DATES[e.event] || e.firstDate;
       const stats = eventStats[e.event] || {};
       const venues = stats.venues!==""&&stats.venues!==undefined&&stats.venues!==null ? +stats.venues : null;
@@ -248,7 +369,7 @@ export default function Dashboard() {
         onSaleDays: fs && sd ? Math.max(daysBetween(fs, sd),0) : null,
       };
     });
-  }, [filtered, startDates, eventStats]);
+  }, [filtered, allStartDates, eventStats]);
 
   const citySummary = useMemo(() => {
     const map = {};
@@ -256,7 +377,7 @@ export default function Dashboard() {
       if (!map[d.city]) map[d.city] = {city:d.city, tickets:0, revenue:0, free:0, events:new Set(), days:0};
       map[d.city].tickets+=d.tickets; map[d.city].revenue+=d.revenue; map[d.city].events.add(d.event); map[d.city].days++;
       const stats=eventStats[d.event]||{};
-      const evtTotal=DATA.filter(x=>x.event===d.event).reduce((s,x)=>s+x.tickets,0);
+      const evtTotal=activeData.filter(x=>x.event===d.event).reduce((s,x)=>s+x.tickets,0);
       const freeRaw=stats.freeTickets!==""&&stats.freeTickets!==undefined?+stats.freeTickets:0;
       const freeShare=evtTotal>0?Math.min(freeRaw,evtTotal)*d.tickets/evtTotal:0;
       map[d.city].free+=freeShare;
@@ -274,7 +395,7 @@ export default function Dashboard() {
 
   const toggleCompare = evt => setCompareEvents(prev => prev.includes(evt) ? prev.filter(e=>e!==evt) : prev.length<6 ? [...prev,evt] : prev);
 
-  // Period sales (from DATA only — master daily sales file)
+  // Period sales (from activeData only — master daily sales file)
   const periodSales = useMemo(() => {
     const yest = addDays(today,-1);
     const dayBefore = addDays(today,-2);
@@ -291,18 +412,30 @@ export default function Dashboard() {
       rows.forEach(d=>{ if(!m[d.event]) m[d.event]={event:d.event,city:d.city,tickets:0,revenue:0}; m[d.event].tickets+=d.tickets; m[d.event].revenue+=d.revenue; });
       return Object.values(m).sort((a,b)=>b.tickets-a.tickets);
     };
-    const yestRows = DATA.filter(d=>d.date===yest);
-    const dayBeforeRows = DATA.filter(d=>d.date===dayBefore);
-    const d7Rows = DATA.filter(d=>d.date>d7start&&d.date<=yest);
-    const prior7Rows = DATA.filter(d=>d.date>d14start&&d.date<=d7start);
-    const mtdRows = DATA.filter(d=>d.date>=mtdStart&&d.date<=yest);
-    const lastMthRows = DATA.filter(d=>d.date>=lastMthStart&&d.date<=lastMthEnd);
-    const lyYestRows = DATA.filter(d=>d.date===lyYest);
-    const lyD7Rows = DATA.filter(d=>d.date>lyD7start&&d.date<=lyYest);
-    const lyMtdRows = DATA.filter(d=>d.date>=lyMtdStart&&d.date<=lyMtdEnd);
+    const yestRows = activeData.filter(d=>d.date===yest);
+    const dayBeforeRows = activeData.filter(d=>d.date===dayBefore);
+    // Find last sales date first so 7d/MTD work even if yesterday not yet entered
+    const allDatesEarly = [...new Set(activeData.map(d=>d.date))].sort();
+    const lastSalesDateEarly = allDatesEarly.length ? allDatesEarly[allDatesEarly.length-1] : yest;
+    const effectiveYest = yestRows.length > 0 ? yest : lastSalesDateEarly;
+    const d7Rows = activeData.filter(d=>d.date>d7start&&d.date<=effectiveYest);
+    const prior7Rows = activeData.filter(d=>d.date>d14start&&d.date<=d7start);
+    const mtdRows = activeData.filter(d=>d.date>=mtdStart&&d.date<=effectiveYest);
+    const lastMthRows = activeData.filter(d=>d.date>=lastMthStart&&d.date<=lastMthEnd);
+    const lyYestRows = activeData.filter(d=>d.date===lyYest);
+    const lyD7Rows = activeData.filter(d=>d.date>lyD7start&&d.date<=lyYest);
+    const lyMtdRows = activeData.filter(d=>d.date>=lyMtdStart&&d.date<=lyMtdEnd);
+
+    // Use pre-calculated lastSalesDate
+    const lastSalesDate = lastSalesDateEarly;
+    const yesterdayMissing = yestRows.length === 0 && lastSalesDate < yest;
+    const lastDayRows = yesterdayMissing ? activeData.filter(d=>d.date===lastSalesDate) : yestRows;
 
     return {
       yesterday: {...sum(yestRows), byEvt:byEvt(yestRows), date:yest},
+      lastSalesDate,
+      yesterdayMissing,
+      lastDay: {...sum(lastDayRows), byEvt:byEvt(lastDayRows), date:lastSalesDate},
       dayBefore: sum(dayBeforeRows),
       last7: {...sum(d7Rows), byEvt:byEvt(d7Rows)},
       prior7: sum(prior7Rows),
@@ -312,7 +445,7 @@ export default function Dashboard() {
       lyLast7: sum(lyD7Rows),
       lyMtd: {...sum(lyMtdRows), month:addDays(today,-365).slice(0,7)},
     };
-  }, [today]);
+  }, [today, activeData]);
 
   // Instant View
   const [instantPeriod, setInstantPeriod] = useState("yesterday");
@@ -342,7 +475,7 @@ export default function Dashboard() {
       if (!cityMap[r.city]) cityMap[r.city] = {city:r.city, tickets:0, revenue:0};
       cityMap[r.city].tickets += r.tickets; cityMap[r.city].revenue += r.revenue;
     });
-    // Prior period by city from DATA
+    // Prior period by city from activeData
     const pStart = instantPeriod==="yesterday"?addDays(periodSales.yesterday.date,-1):
                    instantPeriod==="7day"?addDays(today,-14):
                    (()=>{const m=today.slice(0,7)+"-01";return addDays(m,-1).slice(0,7)+"-01";})();
@@ -350,7 +483,7 @@ export default function Dashboard() {
                  instantPeriod==="7day"?addDays(today,-8):
                  addDays(today.slice(0,7)+"-01",-1);
     const prevMap = {};
-    DATA.filter(d=>d.date>=pStart&&d.date<=pEnd).forEach(d=>{
+    activeData.filter(d=>d.date>=pStart&&d.date<=pEnd).forEach(d=>{
       if(!prevMap[d.city]) prevMap[d.city]={tickets:0,revenue:0};
       prevMap[d.city].tickets+=d.tickets; prevMap[d.city].revenue+=d.revenue;
     });
@@ -381,25 +514,25 @@ export default function Dashboard() {
 
   const allEventTotals = useMemo(() => {
     const map = {};
-    DATA.forEach(d => {
+    activeData.forEach(d => {
       if (!map[d.event]) map[d.event] = {event:d.event, city:d.city, tickets:0, revenue:0};
       map[d.event].tickets += d.tickets; map[d.event].revenue += d.revenue;
     });
     return map;
-  }, []);
+  }, [activeData]);
 
   const getCityFromEvent = useCallback((evt) => {
-    return DATA.find(d=>d.event===evt)?.city || CITIES_LIST.find(c=>evt.startsWith(c)) || "";
-  }, []);
+    return activeData.find(d=>d.event===evt)?.city || cityFromEventName(evt) || "";
+  }, [activeData]);
 
   const completedEventsList = useMemo(() => {
-    // Include: events with a known end date in the past, OR events in DATA whose last sale date suggests completion (last sale > 30 days ago)
+    // Include: events with a known end date in the past, OR events in activeData whose last sale date suggests completion (last sale > 30 days ago)
     // Include ALL events with ticket sales — completed AND future/active
     const eventsToShow = Object.values(allEventTotals).filter(e => e.tickets > 0);
     return eventsToShow
       .map(e => {
         const s=eventStats[e.event]||{};
-        const sd=startDates[e.event]||null;
+        const sd=allStartDates[e.event]||null;
         const ed=sd?addDays(sd,EVENT_DURATION):null;
         const free=s.freeTickets!==""&&s.freeTickets!==undefined?+s.freeTickets:null;
         const addOns=s.addOns!==""&&s.addOns!==undefined?+s.addOns:null;
@@ -407,7 +540,9 @@ export default function Dashboard() {
         const ticketRev=Math.round(e.revenue*100)/100;
         const rep=s.repCommission!==""&&s.repCommission!==undefined?+s.repCommission:null;
         const bartender=s.bartenderRevenue!==""&&s.bartenderRevenue!==undefined?+s.bartenderRevenue:null;
-        const totalRev=(rep!==null||bartender!==null)?Math.round((ticketRev+(bartender||0)-(rep||0))*100)/100:null;
+        // Total revenue = ticket revenue + add-ons + bartender revenue - rep commission
+        const addOnsVal=addOns||0;
+        const totalRev=(rep!==null||bartender!==null||addOns!==null)?Math.round((ticketRev+addOnsVal+(bartender||0)-(rep||0))*100)/100:null;
         const avg=paid&&paid>0?Math.round(ticketRev/paid*100)/100:null;
         const venues=s.venues!==''&&s.venues!==undefined&&s.venues!==null?+s.venues:null;
         return { event:e.event, city:e.city, startDate:sd||"—", endDate:ed||"—", venues,
@@ -415,7 +550,7 @@ export default function Dashboard() {
           repCommission:rep, bartenderRevenue:bartender, totalRevenue:totalRev, avgPrice:avg };
       })
       .sort((a,b)=>b.endDate.localeCompare(a.endDate));
-  }, [allEventTotals, startDates, eventStats, today]);
+  }, [allEventTotals, allStartDates, eventStats, today]);
 
   const sortedStatsList = useMemo(() => {
     const dir = statSort.dir==="asc"?1:-1;
@@ -431,9 +566,9 @@ export default function Dashboard() {
     const buildCurve = (evtList) => {
       const curves = [];
       evtList.forEach(evt => {
-        const sd = startDates[evt.event]; if (!sd) return;
+        const sd = allStartDates[evt.event]; if (!sd) return;
         const ed = addDays(sd, EVENT_DURATION);
-        const rows = DATA.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
+        const rows = activeData.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
         if (rows.length === 0) return;
         const s = eventStats[evt.event] || {};
         const freeTotal = s.freeTickets !== "" && s.freeTickets !== undefined ? +s.freeTickets : 0;
@@ -474,15 +609,15 @@ export default function Dashboard() {
         return cityEvts.length >= 2 ? buildCurve(cityEvts) : null;
       }
     };
-  }, [completedEventsList, startDates, eventStats]);
+  }, [completedEventsList, allStartDates, eventStats]);
   // ── END GLOBAL PACING CURVE ──────────────────────────────────────
 
 
   const comparisonData = useMemo(() => {
     const MILESTONES = [90,60,45,30,14,7,EVENT_DURATION,0]; // EVENT_DURATION=event start, 0=event end
     return compareEvents.map((evt,i) => {
-      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
-      const sd = startDates[evt];
+      const evtData = activeData.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const sd = allStartDates[evt];
       if (!sd) return {label:evt,points:[],forecastPoints:[],color:COLORS[i%COLORS.length],isActive:false};
       const endDate = addDays(sd,EVENT_DURATION);
       const stats = eventStats[evt]||{};
@@ -538,13 +673,13 @@ export default function Dashboard() {
       }
       return {label:evt,points,forecastPoints,color:COLORS[i%COLORS.length],isActive,endDate};
     });
-  }, [compareEvents, startDates, eventStats, today, globalPacingCurve]);
+  }, [compareEvents, allStartDates, eventStats, today, globalPacingCurve]);
 
   const pacingTable = useMemo(() => {
     const MILESTONES = [90,60,45,30,14,7,EVENT_DURATION,0]; // EVENT_DURATION=event start days to end, 0=event end
     return compareEvents.map((evt,i) => {
-      const evtData = DATA.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
-      const sd = startDates[evt];
+      const evtData = activeData.filter(d=>d.event===evt).sort((a,b)=>a.date.localeCompare(b.date));
+      const sd = allStartDates[evt];
       if (!sd) return {event:evt,color:COLORS[i%COLORS.length],total:null,totalRev:null,milestones:{}};
       const endDate = addDays(sd,EVENT_DURATION);
       const stats = eventStats[evt]||{};
@@ -601,12 +736,12 @@ export default function Dashboard() {
       });
       return {event:evt,color:COLORS[i%COLORS.length],isActive,paidTotal,revTotal,milestones,latestDTE};
     });
-  }, [compareEvents, startDates, eventStats, today]);
+  }, [compareEvents, allStartDates, eventStats, today]);
 
   const cityPacingComparison = useMemo(() => {
     const results=[]; const citySeen=new Set();
-    const evtsWithDates = Object.keys(startDates).filter(e=>startDates[e])
-      .map(e=>({event:e, endDate:addDays(startDates[e],EVENT_DURATION)}))
+    const evtsWithDates = Object.keys(allStartDates).filter(e=>allStartDates[e])
+      .map(e=>({event:e, endDate:addDays(allStartDates[e],EVENT_DURATION)}))
       .sort((a,b)=>b.endDate.localeCompare(a.endDate));
     evtsWithDates.forEach(curr => {
       const firstSale=FIRST_SALE_DATES[curr.event];
@@ -622,7 +757,7 @@ export default function Dashboard() {
       const currR=Math.round(((allEventTotals[curr.event]||{}).revenue||0)*100)/100;
       const prevED=prev.endDate;
       let prevAtPt=0,prevRAtPt=0,prevTot=0,prevTotR=0;
-      DATA.filter(d=>d.event===prev.event).forEach(d=>{
+      activeData.filter(d=>d.event===prev.event).forEach(d=>{
         const dte=daysBetween(d.date,prevED);
         if (dte>=daysToEnd){prevAtPt+=d.tickets;prevRAtPt+=d.revenue;}
         prevTot+=d.tickets; prevTotR+=d.revenue;
@@ -658,9 +793,9 @@ export default function Dashboard() {
     const buildCurve = (evtList) => {
       const curves = [];
       evtList.forEach(evt => {
-        const sd = startDates[evt.event]; if (!sd) return;
+        const sd = allStartDates[evt.event]; if (!sd) return;
         const ed = addDays(sd, EVENT_DURATION);
-        const rows = DATA.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
+        const rows = activeData.filter(d => d.event === evt.event).sort((a,b)=>a.date.localeCompare(b.date));
         if (rows.length < 3) return; // need meaningful data
         const s = eventStats[evt.event] || {};
         const freeTotal = s.freeTickets !== '' && s.freeTickets !== undefined ? +s.freeTickets : 0;
@@ -707,13 +842,13 @@ export default function Dashboard() {
 
     const results = [];
     allEvents.forEach(evt => {
-      const sd = startDates[evt]; if (!sd) return;
+      const sd = allStartDates[evt]; if (!sd) return;
       const ed = addDays(sd, EVENT_DURATION);
       const dts = daysBetween(today, sd); // days to event START
       const dte = dts; // forecast uses days to start as reference
       if (daysBetween(today, ed) < 0) return; // fully completed (past end date)
 
-      const rows = DATA.filter(d => d.event === evt).sort((a,b) => a.date.localeCompare(b.date));
+      const rows = activeData.filter(d => d.event === evt).sort((a,b) => a.date.localeCompare(b.date));
       const s = eventStats[evt] || {};
       const paidSoFar = rows.reduce((sum,d) => sum + d.tickets, 0); // daily sales = paid
       const revSoFar = rows.reduce((sum,d) => sum + d.revenue, 0);
@@ -827,7 +962,7 @@ export default function Dashboard() {
     });
 
     return results.sort((a,b) => a.dte - b.dte);
-  }, [allEvents, startDates, completedEventsList, eventStats, today]);
+  }, [allEvents, allStartDates, completedEventsList, eventStats, today]);
   // ── END FORECAST ENGINE ──────────────────────────────────────────
 
   const tabs = [
@@ -841,7 +976,43 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px"}}>
+    <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px",boxSizing:"border-box"}}>
+
+      {/* SYNC STATUS */}
+      <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,marginBottom:8}}>
+        {syncStatus==="loading"&&<span style={{fontSize:10,color:"#f59e0b"}}>⟳ Syncing live data...</span>}
+        {syncStatus==="ok"&&lastSync&&<span style={{fontSize:10,color:"#22c55e"}}>✓ Live data · {lastSync.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span>}
+        {syncStatus==="error"&&<span style={{fontSize:10,color:"#ef4444"}}>⚠ Using cached data</span>}
+        {syncStatus==="idle"&&<span style={{fontSize:10,color:"#4d5568"}}>Loading...</span>}
+      </div>
+
+      {/* NEW EVENTS BANNER */}
+      {newEventsNeedingDates.length > 0 && (
+        <div style={{background:"#6366f111",border:"1px solid #6366f144",borderRadius:10,padding:"12px 16px",marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#6366f1",marginBottom:10}}>
+            🆕 New event{newEventsNeedingDates.length>1?"s":""} detected in sales sheet — enter start date{newEventsNeedingDates.length>1?"s":""} to enable full dashboard features
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {newEventsNeedingDates.map(evt => (
+              <div key={evt} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:"#e4e8f0",fontWeight:600,minWidth:200}}>{evt}</span>
+                <span style={{fontSize:11,color:"#4d5568"}}>City: {cityFromEventName(evt)}</span>
+                <input
+                  type="date"
+                  value={newEvtDateInputs[evt]||""}
+                  onChange={e=>setNewEvtDateInputs(prev=>({...prev,[evt]:e.target.value}))}
+                  style={{background:"#0b0d11",border:"1px solid #3a4050",borderRadius:6,color:"#e4e8f0",padding:"4px 8px",fontSize:12,fontFamily:"inherit"}}
+                />
+                <button
+                  onClick={()=>{if(newEvtDateInputs[evt]){saveCustomDate(evt,newEvtDateInputs[evt]);}}}
+                  disabled={!newEvtDateInputs[evt]}
+                  style={{padding:"4px 14px",borderRadius:6,border:"1px solid #6366f1",background:newEvtDateInputs[evt]?"#6366f1":"transparent",color:newEvtDateInputs[evt]?"#fff":"#4d5568",fontSize:12,cursor:newEvtDateInputs[evt]?"pointer":"default",fontFamily:"inherit"}}
+                >Save</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* TICKER */}
       {(()=>{
@@ -849,7 +1020,7 @@ export default function Dashboard() {
         const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
         const avgP=(t,r)=>t>0?(r/t).toFixed(2):null;
         const items=[
-          {label:"Yesterday",tickets:ps.yesterday.tickets,tDiff:pct(ps.yesterday.tickets,ps.dayBefore.tickets),revenue:ps.yesterday.revenue,rDiff:pct(ps.yesterday.revenue,ps.dayBefore.revenue),avg:avgP(ps.yesterday.tickets,ps.yesterday.revenue),avgDiff:pct(avgP(ps.yesterday.tickets,ps.yesterday.revenue),avgP(ps.dayBefore.tickets,ps.dayBefore.revenue)),period:"yesterday"},
+          {label:ps.yesterdayMissing?ps.lastSalesDate:"Yesterday",tickets:ps.lastDay.tickets,tDiff:pct(ps.lastDay.tickets,ps.dayBefore.tickets),revenue:ps.lastDay.revenue,rDiff:pct(ps.lastDay.revenue,ps.dayBefore.revenue),avg:avgP(ps.lastDay.tickets,ps.lastDay.revenue),avgDiff:pct(avgP(ps.lastDay.tickets,ps.lastDay.revenue),avgP(ps.dayBefore.tickets,ps.dayBefore.revenue)),period:"yesterday"},
           {label:"Last 7 Days",tickets:ps.last7.tickets,tDiff:pct(ps.last7.tickets,ps.prior7.tickets),revenue:ps.last7.revenue,rDiff:pct(ps.last7.revenue,ps.prior7.revenue),avg:avgP(ps.last7.tickets,ps.last7.revenue),avgDiff:pct(avgP(ps.last7.tickets,ps.last7.revenue),avgP(ps.prior7.tickets,ps.prior7.revenue)),period:"7day"},
           {label:"MTD",tickets:ps.mtd.tickets,tDiff:pct(ps.mtd.tickets,ps.lastMth.tickets),revenue:ps.mtd.revenue,rDiff:pct(ps.mtd.revenue,ps.lastMth.revenue),avg:avgP(ps.mtd.tickets,ps.mtd.revenue),avgDiff:pct(avgP(ps.mtd.tickets,ps.mtd.revenue),avgP(ps.lastMth.tickets,ps.lastMth.revenue)),period:"mtd"},
         ];
@@ -966,12 +1137,22 @@ export default function Dashboard() {
       {/* INSTANT VIEW */}
       {tab==="instant" && (
         <div>
+          {/* YESTERDAY MISSING WARNING */}
+          {periodSales.yesterdayMissing&&(
+            <div style={{background:"#f59e0b11",border:"1px solid #f59e0b44",borderRadius:10,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:16}}>⚠️</span>
+              <div>
+                <span style={{fontSize:12,fontWeight:700,color:"#f59e0b"}}>Yesterday's sales not yet input</span>
+                <span style={{fontSize:11,color:"#7a8499",marginLeft:8}}>Showing last recorded day: <strong style={{color:"#e4e8f0"}}>{periodSales.lastSalesDate}</strong></span>
+              </div>
+            </div>
+          )}
           {/* PERIOD SUMMARY BLOCKS */}
           {(()=>{
             const ps=periodSales;
             const pct=(a,b)=>b>0?((a-b)/b*100).toFixed(1):null;
             const periods=[
-              {label:"Yesterday",curr:ps.yesterday,prev:ps.dayBefore,ly:ps.lyYesterday,id:"yesterday"},
+              {label:ps.yesterdayMissing?ps.lastSalesDate:"Yesterday",curr:ps.lastDay,prev:ps.dayBefore,ly:ps.lyYesterday,id:"yesterday",missing:ps.yesterdayMissing},
               {label:"Last 7 Days",curr:ps.last7,prev:ps.prior7,ly:ps.lyLast7,id:"7day"},
               {label:"Month to Date",curr:ps.mtd,prev:ps.lastMth,ly:ps.lyMtd,id:"mtd"},
             ];
@@ -1130,7 +1311,7 @@ export default function Dashboard() {
         <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
           <span style={{fontSize:10,fontWeight:700,color:"#4d5568",textTransform:"uppercase",letterSpacing:1.2}}>Filters</span>
           {[
-            {label:"City",val:city,set:v=>{setCity(v);setSelectedEvents([]);},opts:[["All","All Cities"],...[...new Set(DATA.map(d=>d.city))].sort().map(c=>[c,c])]},
+            {label:"City",val:city,set:v=>{setCity(v);setSelectedEvents([]);},opts:[["All","All Cities"],...[...new Set(activeData.map(d=>d.city))].sort().map(c=>[c,c])]},
             {label:"Year",val:year,set:setYear,opts:[["All","All"],...ALL_YEARS.map(y=>[y,y])]},
             {label:"Month",val:month,set:setMonth,opts:[["All","All"],...ALL_MONTHS_NUM.map(m=>[m,MONTHS[m]])]},
           ].map(f=>(
@@ -1173,9 +1354,9 @@ export default function Dashboard() {
             // Default: show next 5 upcoming events only
             (()=>{
               const upcoming=allEvents.filter(e=>{
-                const sd=startDates[e]; if(!sd) return false;
+                const sd=allStartDates[e]; if(!sd) return false;
                 return sd>today;
-              }).sort((a,b)=>startDates[a].localeCompare(startDates[b])).slice(0,5);
+              }).sort((a,b)=>allStartDates[a].localeCompare(allStartDates[b])).slice(0,5);
               return (
                 <div>
                   <div style={{fontSize:12,fontWeight:700,color:"#00d4aa",textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>⚡ Next 5 Upcoming Events</div>
@@ -1184,11 +1365,11 @@ export default function Dashboard() {
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
                       {upcoming.map((evt,i)=>{
-                        const sd=startDates[evt];
+                        const sd=allStartDates[evt];
                         const dts=daysBetween(today,sd);
-                        const sales=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
-                        const rev=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.revenue,0);
-                        const evtCity=DATA.find(d=>d.event===evt)?.city||CITIES_LIST.find(c=>evt.includes(c))||"";
+                        const sales=activeData.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
+                        const rev=activeData.filter(d=>d.event===evt).reduce((s,d)=>s+d.revenue,0);
+                        const evtCity=activeData.find(d=>d.event===evt)?.city||CITIES_LIST.find(c=>evt.includes(c))||"";
                         return (
                           <div key={evt} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,borderTop:"2px solid "+COLORS[i%COLORS.length]}}>
                             <div style={{fontSize:13,fontWeight:700,color:"#e4e8f0",marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{evt}</div>
@@ -1267,9 +1448,9 @@ export default function Dashboard() {
             // Default: next 5 cities with upcoming events
             (()=>{
               const upcomingCities=[...new Set(
-                allEvents.filter(e=>startDates[e]&&startDates[e]>today)
-                  .sort((a,b)=>startDates[a].localeCompare(startDates[b]))
-                  .map(e=>DATA.find(d=>d.event===e)?.city||CITIES_LIST.find(c=>e.includes(c))||"")
+                allEvents.filter(e=>allStartDates[e]&&allStartDates[e]>today)
+                  .sort((a,b)=>allStartDates[a].localeCompare(allStartDates[b]))
+                  .map(e=>activeData.find(d=>d.event===e)?.city||CITIES_LIST.find(c=>e.includes(c))||"")
                   .filter(Boolean)
               )].slice(0,5);
               return (
@@ -1278,11 +1459,11 @@ export default function Dashboard() {
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12,marginBottom:14}}>
                     {upcomingCities.map((ct,i)=>{
                       const cityColor=CITY_COLORS[ct]||COLORS[i%COLORS.length];
-                      const nextEvt=allEvents.filter(e=>startDates[e]&&startDates[e]>today&&(DATA.find(d=>d.event===e)?.city===ct||e.includes(ct))).sort((a,b)=>startDates[a].localeCompare(startDates[b]))[0];
-                      const sd=nextEvt?startDates[nextEvt]:null;
+                      const nextEvt=allEvents.filter(e=>allStartDates[e]&&allStartDates[e]>today&&(activeData.find(d=>d.event===e)?.city===ct||e.includes(ct))).sort((a,b)=>allStartDates[a].localeCompare(allStartDates[b]))[0];
+                      const sd=nextEvt?allStartDates[nextEvt]:null;
                       const dts=sd?daysBetween(today,sd):null;
                       const cityData=citySummary.find(c=>c.city===ct)||{tickets:0,revenue:0,paidTickets:0};
-                      const allTimeEvts=allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===ct)).length;
+                      const allTimeEvts=allEvents.filter(e=>activeData.some(d=>d.event===e&&d.city===ct)).length;
                       return (
                         <div key={ct} style={{background:"#13161c",border:"1px solid #242a35",borderRadius:12,padding:16,borderTop:"2px solid "+cityColor}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
@@ -1347,7 +1528,7 @@ export default function Dashboard() {
               {dailyEvtOpen&&(
                 <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#13161c",border:"1px solid #242a35",borderRadius:8,padding:8,minWidth:260,maxHeight:280,overflowY:"auto",marginTop:4,boxShadow:"0 8px 24px #00000066"}}>
                   <button onClick={()=>setDailySelectedEvents([])} style={{display:"block",width:"100%",textAlign:"left",padding:"4px 8px",background:"transparent",border:"none",color:"#00d4aa",fontSize:11,cursor:"pointer",marginBottom:4}}>✓ Select All</button>
-                  {(dailyCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===dailyCity))).map(e=>(
+                  {(dailyCity==="All"?allEvents:allEvents.filter(e=>activeData.some(d=>d.event===e&&d.city===dailyCity))).map(e=>(
                     <label key={e} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",cursor:"pointer",borderRadius:4,background:dailySelectedEvents.includes(e)?"#00d4aa11":"transparent"}}>
                       <input type="checkbox" checked={dailySelectedEvents.includes(e)} onChange={()=>setDailySelectedEvents(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{accentColor:"#00d4aa",cursor:"pointer"}}/>
                       <span style={{fontSize:11,color:"#e4e8f0"}}>{e}</span>
@@ -1366,7 +1547,7 @@ export default function Dashboard() {
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:12,color:"#7a8499"}}>
               {(()=>{
-                const base=DATA.filter(d=>
+                const base=activeData.filter(d=>
                   (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
                   (dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
                 );
@@ -1387,7 +1568,7 @@ export default function Dashboard() {
 
           {(()=>{
             if(dailyTop10){
-              const src=DATA;
+              const src=activeData;
               const byEvt=dailyMode==="byevent";
               let rows;
               if(byEvt){
@@ -1414,7 +1595,7 @@ export default function Dashboard() {
                       </tr></thead>
                       <tbody>{rows.map((r,i)=>{
                           const isExpanded=expandedDateRow===r.date+(r.city!=="All"?r.city:"");
-                          const dayBreakdown=DATA.filter(d=>d.date===r.date).sort((a,b)=>b.revenue-a.revenue);
+                          const dayBreakdown=activeData.filter(d=>d.date===r.date).sort((a,b)=>b.revenue-a.revenue);
                           return (<React.Fragment key={i}>
                             <tr onClick={()=>setExpandedDateRow(isExpanded?null:r.date+(r.city!=="All"?r.city:""))} style={{cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#1a1e26"} onMouseLeave={e=>e.currentTarget.style.background=isExpanded?"#1a1e26":""}>
                               <td style={{padding:"8px 12px",borderBottom:"1px solid #1e222b",color:"#f59e0b",fontWeight:700}}>{i+1}</td>
@@ -1445,7 +1626,7 @@ export default function Dashboard() {
                 </div>
               );
             }
-            const dailyFiltered = DATA.filter(d=>
+            const dailyFiltered = activeData.filter(d=>
               (!dailyFrom||d.date>=dailyFrom)&&(!dailyTo||d.date<=dailyTo)&&
               (dailySelectedEvents.length===0||dailySelectedEvents.includes(d.event))
             );
@@ -1453,7 +1634,7 @@ export default function Dashboard() {
               const beData=dailyFiltered.slice().sort((a,b)=>b.date.localeCompare(a.date));
               if(dailyYoY){
                 const lyMap={};
-                DATA.forEach(d=>{const ly=addDays(d.date,365);lyMap[ly+"||"+d.event]=(lyMap[ly+"||"+d.event]||0)+d.tickets;});
+                activeData.forEach(d=>{const ly=addDays(d.date,365);lyMap[ly+"||"+d.event]=(lyMap[ly+"||"+d.event]||0)+d.tickets;});
                 return (<div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                     <thead><tr style={{background:"#1a1e26"}}>{["Date","Event","City","Tickets","LY Tickets","YoY","Revenue"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -1487,7 +1668,7 @@ export default function Dashboard() {
             const rows=Object.values(map).map(d=>({...d,revenue:Math.round(d.revenue*100)/100,avgPrice:d.tickets>0?Math.round(d.revenue/d.tickets*100)/100:0,events:d.evtSet.size})).sort((a,b)=>b.date.localeCompare(a.date));
             if(dailyYoY){
               const lyTotMap={};
-              DATA.forEach(d=>{const ly=addDays(d.date,365);lyTotMap[ly]=(lyTotMap[ly]||{tickets:0,revenue:0});lyTotMap[ly].tickets+=d.tickets;lyTotMap[ly].revenue+=d.revenue;});
+              activeData.forEach(d=>{const ly=addDays(d.date,365);lyTotMap[ly]=(lyTotMap[ly]||{tickets:0,revenue:0});lyTotMap[ly].tickets+=d.tickets;lyTotMap[ly].revenue+=d.revenue;});
               return (<div style={{overflowX:"auto",borderRadius:12,border:"1px solid #242a35",background:"#13161c"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
                   <thead><tr style={{background:"#1a1e26"}}>{["Date","Tickets","LY Tickets","Tkts YoY","Revenue","LY Revenue","Rev YoY","Events"].map(h=><th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#7a8499",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #242a35",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
@@ -1690,7 +1871,7 @@ export default function Dashboard() {
                   })}</tbody>
                 </table>
               </div>
-              <p style={{fontSize:10,color:"#4d5568",marginBottom:0}}>~ italic = forecast based on previous {[...new Set(pacingTable.map(r=>r.event).map(e=>{const d=DATA.find(d=>d.event===e);return d?.city||"";}).filter(Boolean))].join("/")} event pacing</p>
+              <p style={{fontSize:10,color:"#4d5568",marginBottom:0}}>~ italic = forecast based on previous {[...new Set(pacingTable.map(r=>r.event).map(e=>{const d=activeData.find(d=>d.event===e);return d?.city||"";}).filter(Boolean))].join("/")} event pacing</p>
             </div>
           )}
 
@@ -1707,10 +1888,10 @@ export default function Dashboard() {
                 const evtList = allEvents.filter(e=>!searchEvt||e.toLowerCase().includes(searchEvt.toLowerCase()));
                 // Sort: upcoming (furthest out first -> soonest start), then active (soonest end first), then completed (most recent end first)
                 return evtList.sort((a,b)=>{
-                  const edA=startDates[a]?addDays(startDates[a],EVENT_DURATION):null;
-                  const edB=startDates[b]?addDays(startDates[b],EVENT_DURATION):null;
-                  const sdA=startDates[a]||null;
-                  const sdB=startDates[b]||null;
+                  const edA=allStartDates[a]?addDays(allStartDates[a],EVENT_DURATION):null;
+                  const edB=allStartDates[b]?addDays(allStartDates[b],EVENT_DURATION):null;
+                  const sdA=allStartDates[a]||null;
+                  const sdB=allStartDates[b]||null;
                   const activeA=edA&&edA>=now&&sdA&&sdA<=now;
                   const activeB=edB&&edB>=now&&sdB&&sdB<=now;
                   const upcomingA=sdA&&sdA>now;
@@ -1726,11 +1907,11 @@ export default function Dashboard() {
                   return (edA||"").localeCompare(edB||"");
                 });
               })().map(evt => {
-                const sd=startDates[evt]; const ed=sd?addDays(sd,EVENT_DURATION):null;
+                const sd=allStartDates[evt]; const ed=sd?addDays(sd,EVENT_DURATION):null;
                 const daysToEnd=ed?daysBetween(today,ed):null;
                 const daysToStart=sd?daysBetween(today,sd):null;
                 const isComp=compareEvents.includes(evt);
-                const evtTotal=DATA.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
+                const evtTotal=activeData.filter(d=>d.event===evt).reduce((s,d)=>s+d.tickets,0);
                 const fs=FIRST_SALE_DATES[evt];
                 return (
                   <div key={evt} style={{background:"#0b0d11",border:"1px solid "+(isComp?"#00d4aa":"#242a35"),borderRadius:10,padding:"12px 14px",...(isComp?{background:"#00d4aa06"}:{})}}>
@@ -1797,7 +1978,7 @@ export default function Dashboard() {
               {statsEvtOpen&&(
                 <div style={{position:"absolute",top:"100%",left:0,zIndex:200,background:"#13161c",border:"1px solid #242a35",borderRadius:8,padding:8,minWidth:260,maxHeight:280,overflowY:"auto",marginTop:4,boxShadow:"0 8px 24px #00000066"}}>
                   <button onClick={()=>setStatsSelectedEvents([])} style={{display:"block",width:"100%",textAlign:"left",padding:"4px 8px",background:"transparent",border:"none",color:"#00d4aa",fontSize:11,cursor:"pointer",marginBottom:4}}>✓ Select All</button>
-                  {(statsCity==="All"?allEvents:allEvents.filter(e=>DATA.some(d=>d.event===e&&d.city===statsCity))).map(e=>(
+                  {(statsCity==="All"?allEvents:allEvents.filter(e=>activeData.some(d=>d.event===e&&d.city===statsCity))).map(e=>(
                     <label key={e} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",cursor:"pointer",borderRadius:4,background:statsSelectedEvents.includes(e)?"#00d4aa11":"transparent"}}>
                       <input type="checkbox" checked={statsSelectedEvents.includes(e)} onChange={()=>setStatsSelectedEvents(prev=>prev.includes(e)?prev.filter(x=>x!==e):[...prev,e])} style={{accentColor:"#00d4aa",cursor:"pointer"}}/>
                       <span style={{fontSize:11,color:"#e4e8f0"}}>{e}</span>
@@ -1837,7 +2018,7 @@ export default function Dashboard() {
             const totRev=filteredStats.reduce((s,e)=>s+e.ticketRevenue,0);
             const cities=new Set(filteredStats.map(e=>e.city)).size;
             const totalDays=filteredStats.reduce((s,e)=>{
-              const evtRows=DATA.filter(d=>d.event===e.event);
+              const evtRows=activeData.filter(d=>d.event===e.event);
               return s+(evtRows.length||0);
             },0);
             const avgDailyPaid=totalDays>0?totPaid/totalDays:0;
