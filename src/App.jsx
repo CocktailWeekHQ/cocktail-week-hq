@@ -159,6 +159,23 @@ export default function Dashboard() {
   const [evtsDropOpen, setEvtsDropOpen] = useState(false);
   // ── LIVE activeData FROM GOOGLE SHEETS ─────────────────────────────────
   useEffect(() => { document.body.style.background = "#0b0d11"; document.body.style.margin = "0"; }, []);
+
+  // ── PASSWORD GATE ─────────────────────────────────────────────────
+  const CW_PASSWORD = "cocktailweek2026";
+  const [authed, setAuthed] = useState(() => {
+    try { return localStorage.getItem("cw_authed") === "yes"; } catch { return false; }
+  });
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+  const handleLogin = () => {
+    if (pwInput === CW_PASSWORD) {
+      localStorage.setItem("cw_authed", "yes");
+      setAuthed(true); setPwError(false);
+    } else {
+      setPwError(true); setPwInput("");
+    }
+  };
+  // ── END PASSWORD GATE ──────────────────────────────────────────────
   const [liveData, setLiveData] = useState(null);
   // Custom start dates entered by user for new events (persisted to localStorage)
   const [customStartDates, setCustomStartDates] = useState(() => {
@@ -262,16 +279,11 @@ export default function Dashboard() {
     return sheetEvents.filter(e => e && !allKnown[e]).sort();
   }, [liveData, customStartDates]);
 
-  // allEvents list includes sheet events even if no start date
-  // Merge live sheet data with hardcoded DATA
-  // Live data takes precedence: if sheet has rows for a date+event, use those; otherwise use hardcoded
+  // Sheet is source of truth — use sheet data entirely when loaded
+  // Fall back to hardcoded DATA only while sheet is loading
   const activeData = useMemo(() => {
     if (!liveData || liveData.length === 0) return DATA;
-    // Build a set of date+event keys from live data
-    const liveKeys = new Set(liveData.map(d => d.date + "|" + d.event));
-    // Keep hardcoded rows that aren't in live data
-    const hardcodedFiltered = DATA.filter(d => !liveKeys.has(d.date + "|" + d.event));
-    return [...hardcodedFiltered, ...liveData].sort((a,b) => a.date.localeCompare(b.date));
+    return [...liveData].sort((a,b) => a.date.localeCompare(b.date));
   }, [liveData]);
 
   const [tab, setTab] = useState("instant");
@@ -983,6 +995,29 @@ export default function Dashboard() {
     {id:"stats",label:"Event Stats",icon:"📋"},
     {id:"forecast",label:"Forecast",icon:"🔮"},
   ];
+
+  if (!authed) return (
+    <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:16,padding:"40px 48px",width:360,textAlign:"center"}}>
+        <div style={{fontSize:28,marginBottom:4}}>🍸</div>
+        <div style={{fontSize:20,fontWeight:700,color:"#e4e8f0",marginBottom:4}}>Cocktail Week HQ</div>
+        <div style={{fontSize:12,color:"#4d5568",marginBottom:28}}>Enter password to continue</div>
+        <input
+          type="password"
+          placeholder="Password"
+          value={pwInput}
+          onChange={e=>{setPwInput(e.target.value);setPwError(false);}}
+          onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+          style={{width:"100%",background:"#0b0d11",border:`1px solid ${pwError?"#ef4444":"#242a35"}`,borderRadius:8,color:"#e4e8f0",padding:"10px 14px",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}
+        />
+        {pwError&&<div style={{fontSize:12,color:"#ef4444",marginBottom:8}}>Incorrect password</div>}
+        <button
+          onClick={handleLogin}
+          style={{width:"100%",background:"#00d4aa",border:"none",borderRadius:8,color:"#0b0d11",padding:"10px 14px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:4}}
+        >Enter</button>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px",boxSizing:"border-box"}}>
