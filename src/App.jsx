@@ -160,22 +160,6 @@ export default function Dashboard() {
   // ── LIVE activeData FROM GOOGLE SHEETS ─────────────────────────────────
   useEffect(() => { document.body.style.background = "#0b0d11"; document.body.style.margin = "0"; }, []);
 
-  // ── PASSWORD GATE ─────────────────────────────────────────────────
-  const CW_PASSWORD = "cocktailweek2026";
-  const [authed, setAuthed] = useState(() => {
-    try { return localStorage.getItem("cw_authed") === "yes"; } catch { return false; }
-  });
-  const [pwInput, setPwInput] = useState("");
-  const [pwError, setPwError] = useState(false);
-  const handleLogin = () => {
-    if (pwInput === CW_PASSWORD) {
-      localStorage.setItem("cw_authed", "yes");
-      setAuthed(true); setPwError(false);
-    } else {
-      setPwError(true); setPwInput("");
-    }
-  };
-  // ── END PASSWORD GATE ──────────────────────────────────────────────
   const [liveData, setLiveData] = useState(null);
   // Custom start dates entered by user for new events (persisted to localStorage)
   const [customStartDates, setCustomStartDates] = useState(() => {
@@ -996,30 +980,7 @@ export default function Dashboard() {
     {id:"forecast",label:"Forecast",icon:"🔮"},
   ];
 
-  const loginScreen = (
-    <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:16,padding:"40px 48px",width:360,textAlign:"center"}}>
-        <div style={{fontSize:28,marginBottom:4}}>🍸</div>
-        <div style={{fontSize:20,fontWeight:700,color:"#e4e8f0",marginBottom:4}}>Cocktail Week HQ</div>
-        <div style={{fontSize:12,color:"#4d5568",marginBottom:28}}>Enter password to continue</div>
-        <input
-          type="password"
-          placeholder="Password"
-          value={pwInput}
-          onChange={e=>{setPwInput(e.target.value);setPwError(false);}}
-          onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-          style={{width:"100%",background:"#0b0d11",border:"1px solid "+(pwError?"#ef4444":"#242a35"),borderRadius:8,color:"#e4e8f0",padding:"10px 14px",fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8,outline:"none"}}
-        />
-        {pwError&&<div style={{fontSize:12,color:"#ef4444",marginBottom:8}}>Incorrect password</div>}
-        <button
-          onClick={handleLogin}
-          style={{width:"100%",background:"#00d4aa",border:"none",borderRadius:8,color:"#0b0d11",padding:"10px 14px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginTop:4}}
-        >Enter</button>
-      </div>
-    </div>
-  );
-
-  return !authed ? loginScreen : (
+  return (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px",boxSizing:"border-box"}}>
 
       {/* SYNC STATUS */}
