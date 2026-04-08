@@ -179,9 +179,20 @@ export default function Dashboard() {
     // Sheet is tab-separated with columns: company_name, sales_date, event_name, sales_made, revenue_made
     const lines = text.trim().split("\n");
     if (lines.length < 2) return null;
-    // Auto-detect separator (tab or comma)
+    // Proper CSV parser that handles quoted fields e.g. "1,532"
+    const parseCSVLine = (line) => {
+      const fields = []; let cur = ""; let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') { inQ = !inQ; }
+        else if (c === "," && !inQ) { fields.push(cur.trim()); cur = ""; }
+        else { cur += c; }
+      }
+      fields.push(cur.trim());
+      return fields;
+    };
     const sep = lines[0].includes("\t") ? "\t" : ",";
-    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/[^a-z0-9_]/g,""));
+    const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/[^a-z0-9_]/g,""));
     // Map columns — handles tickets_sold or sales_made
     const iDate   = headers.findIndex(h => h.includes("date"));
     const iEvent  = headers.findIndex(h => h.includes("event"));
@@ -201,7 +212,7 @@ export default function Dashboard() {
     const knownEvents = new Set(DATA.map(d => d.event));
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
-      const p = lines[i].split(sep);
+      const p = parseCSVLine(lines[i]);
       if (p.length < 3) continue;
       const date = parseDate(p[iDate]);
       const event = p[iEvent]?.trim();
