@@ -865,9 +865,8 @@ export default function Dashboard() {
     allEvents.forEach(evt => {
       const sd = allStartDates[evt]; if (!sd) return;
       const ed = addDays(sd, EVENT_DURATION);
-      const dts = daysBetween(today, sd); // days to event START
-      const dte = dts; // forecast uses days to start as reference
-      if (daysBetween(today, ed) < 0) return; // fully completed (past end date)
+      const dte = daysBetween(today, ed); // days to event END (matches curve index)
+      if (dte < 0) return; // fully completed (past end date)
 
       const rows = activeData.filter(d => d.event === evt).sort((a,b) => a.date.localeCompare(b.date));
       const s = eventStats[evt] || {};
@@ -898,6 +897,7 @@ export default function Dashboard() {
         ? recentRows.reduce((s,d) => s + d.tickets, 0) / recentRows.length
         : (rows.length > 0 ? paidSoFar / rows.length : 0);
       const trajForecast = paidSoFar + dailyRate * Math.max(0, dte);
+      // dte is now days to event END — trajectory projects forward to end
 
       // Dynamic weights: closer to event = more trajectory weight
       const dataRichness = Math.min(1, rows.length / 30);
