@@ -996,7 +996,7 @@ export default function Dashboard() {
     {id:"forecast",label:"Forecast",icon:"🔮"},
   ];
 
-  if (!authed) return (
+  const loginScreen = (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{background:"#13161c",border:"1px solid #242a35",borderRadius:16,padding:"40px 48px",width:360,textAlign:"center"}}>
         <div style={{fontSize:28,marginBottom:4}}>🍸</div>
@@ -1019,7 +1019,7 @@ export default function Dashboard() {
     </div>
   );
 
-  return (
+  return !authed ? loginScreen : (
     <div style={{fontFamily:"'Plus Jakarta Sans','Segoe UI',sans-serif",background:"#0b0d11",color:"#e4e8f0",minHeight:"100vh",padding:"24px 20px",boxSizing:"border-box"}}>
 
       {/* SYNC STATUS */}
